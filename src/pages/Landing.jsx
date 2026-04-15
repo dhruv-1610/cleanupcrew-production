@@ -88,26 +88,40 @@ export default function Landing() {
     return (
         <div className="min-h-screen">
             {/* HERO SECTION */}
-            <section className="relative pt-32 pb-20 overflow-hidden border-b-8 border-white/20">
-                <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <section className="relative overflow-hidden border-b-8 border-white/20 flex items-center justify-center" style={{ height: '100vh' }}>
+                {/* Video Background */}
+                <video
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    className="absolute inset-0 w-full h-full object-cover"
+                    style={{ zIndex: 0 }}
+                >
+                    <source src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260315_073750_51473149-4350-4920-ae24-c8214286f323.mp4" type="video/mp4" />
+                </video>
+                {/* Subtle dark tint for text readability */}
+                <div className="absolute inset-0" style={{ zIndex: 1, background: 'rgba(0,0,0,0.35)' }} />
 
-                    <motion.h1 initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-6xl sm:text-8xl lg:text-[140px] font-black leading-none tracking-tight mb-8 drop-shadow-[4px_4px_0px_#005202]">
+                <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center" style={{ zIndex: 2 }}>
+
+                    <motion.h1 initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-5xl sm:text-7xl lg:text-[100px] font-black leading-none tracking-tight mb-4 drop-shadow-[4px_4px_0px_rgba(0,0,0,0.5)]">
                         CLEAN. TRACK.<br />IMPACT.
                     </motion.h1>
 
-                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 px-6 py-2 rounded-full bg-white text-[#008303] border-4 border-[#005202] font-extrabold text-sm mb-8 shadow-[4px_4px_0px_#005202]">
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 px-5 py-1.5 rounded-full bg-white text-[#008303] border-4 border-[#005202] font-extrabold text-sm mb-4 shadow-[4px_4px_0px_#005202]">
                         <Sparkles size={16} /> {mockStats.completedDrives} DRIVES COMPLETED NATIONWIDE
                     </motion.div>
 
-                    <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="text-xl sm:text-2xl text-white font-semibold max-w-2xl mx-auto mb-10 drop-shadow-md">
+                    <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="text-lg sm:text-xl text-white font-semibold max-w-2xl mx-auto mb-6 drop-shadow-md">
                         Gamified, transparent community cleanups. We show you exactly where every rupee and hour goes.
                     </motion.p>
 
-                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="flex flex-wrap justify-center gap-6">
-                        <Link to="/drives" className="btn-primary text-xl px-10 py-5">
-                            <Zap size={24} /> JOIN A DRIVE
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="flex flex-wrap justify-center gap-4">
+                        <Link to="/drives" className="btn-primary text-lg px-8 py-4">
+                            <Zap size={20} /> JOIN A DRIVE
                         </Link>
-                        <Link to="/map" className="btn-secondary text-xl px-10 py-5 bg-white text-[#008303]">
+                        <Link to="/map" className="btn-secondary text-lg px-8 py-4 bg-white text-[#008303]">
                             EXPLORE MAP
                         </Link>
                     </motion.div>
