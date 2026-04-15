@@ -1,0 +1,263 @@
+@import "tailwindcss";
+
+@theme {
+  --color-emerald-50: #e5f5e6;
+  --color-emerald-100: #cceacc;
+  --color-emerald-200: #99d699;
+  --color-emerald-300: #66c166;
+  --color-emerald-400: #33ad33;
+  --color-emerald-500: #008303;
+  --color-emerald-600: #006902;
+  --color-emerald-700: #004e02;
+  --color-emerald-800: #003401;
+  --color-emerald-900: #001a01;
+
+  --font-display: 'Titan One', sans-serif;
+  --font-body: 'Fredoka', sans-serif;
+}
+
+/* BASE COLOR REDEFINITION */
+body {
+  font-family: var(--font-body);
+  background-color: #008303 !important;
+  color: #ffffff !important;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.6;
+}
+
+/* Base text elements on the green body should be white */
+.text-gray-900,
+.text-gray-800,
+.text-gray-700,
+.text-gray-600,
+.text-gray-500,
+.text-gray-400,
+.text-emerald-400,
+.text-emerald-500,
+.text-white {
+  color: #ffffff !important;
+}
+
+/* HEADINGS */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display) !important;
+  color: #ffffff !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* GRADIENTS TO SOLID */
+.gradient-text,
+.gradient-text-white {
+  background: none !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+/* CARDS - SOLID WHITE */
+.glass-card,
+.glass-card-heavy,
+.bg-white {
+  background-color: #ffffff !important;
+  border: 4px solid #005202 !important;
+  border-radius: 16px !important;
+  box-shadow: 6px 6px 0px #005202 !important;
+  color: #008303 !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  overflow: hidden;
+}
+
+.glass-card:hover,
+.glass-card-heavy:hover {
+  transform: translate(-3px, -3px) !important;
+  box-shadow: 9px 9px 0px #005202 !important;
+}
+
+/* Contextual text colors: Text inside white cards must be green! */
+.glass-card *,
+.glass-card-heavy *,
+.bg-white * {
+  border-color: rgba(0, 131, 3, 0.15);
+}
+
+.glass-card .text-gray-900,
+.glass-card .text-gray-800,
+.glass-card .text-white,
+.glass-card .text-emerald-400,
+.glass-card-heavy .text-gray-900,
+.glass-card-heavy .text-gray-800,
+.glass-card-heavy .text-white,
+.glass-card-heavy .text-emerald-400,
+.bg-white .text-gray-900,
+.bg-white .text-gray-800,
+.bg-white .text-white,
+.bg-white .text-emerald-400 {
+  color: #008303 !important;
+}
+
+.glass-card .text-gray-500,
+.glass-card .text-gray-600,
+.glass-card .text-xs,
+.glass-card-heavy .text-gray-500,
+.glass-card-heavy .text-gray-600,
+.glass-card-heavy .text-xs,
+.bg-white .text-gray-500,
+.bg-white .text-gray-600,
+.bg-white .text-xs {
+  color: #005a02 !important;
+  font-weight: 500;
+}
+
+.glass-card h1,
+.glass-card h2,
+.glass-card h3,
+.glass-card h4,
+.glass-card h5,
+.glass-card h6,
+.glass-card-heavy h1,
+.glass-card-heavy h2,
+.glass-card-heavy h3,
+.bg-white h1,
+.bg-white h2,
+.bg-white h3 {
+  color: #008303 !important;
+}
+
+/* BUTTONS */
+.btn-primary {
+  background-color: #ffffff !important;
+  color: #008303 !important;
+  border: 3px solid #005202 !important;
+  border-radius: 12px !important;
+  box-shadow: 4px 4px 0px #005202 !important;
+  font-family: var(--font-display) !important;
+  font-size: 1.1rem !important;
+  padding: 12px 32px !important;
+  text-transform: uppercase;
+  transition: all 0.1s ease !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-primary * {
+  color: #008303 !important;
+}
+
+.btn-primary:hover {
+  transform: translate(-2px, -2px) !important;
+  box-shadow: 6px 6px 0px #005202 !important;
+  background-color: #f0fdf4 !important;
+}
+
+.btn-primary:active {
+  transform: translate(4px, 4px) !important;
+  box-shadow: 0px 0px 0px #005202 !important;
+}
+
+.btn-secondary {
+  background-color: transparent !important;
+  color: #ffffff !important;
+  border: 3px solid #ffffff !important;
+  border-radius: 12px !important;
+  font-family: var(--font-display) !important;
+  font-size: 1.1rem !important;
+  padding: 12px 32px !important;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-secondary:hover {
+  background-color: #ffffff !important;
+  color: #008303 !important;
+}
+
+/* INPUTS */
+input,
+textarea {
+  background-color: #ffffff !important;
+  color: #008303 !important;
+  border: 3px solid #005202 !important;
+  border-radius: 12px !important;
+  box-shadow: 3px 3px 0px #005202 !important;
+  font-family: var(--font-body);
+  font-weight: 500;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #008303 !important;
+  opacity: 0.6;
+}
+
+input:focus,
+textarea:focus {
+  outline: none;
+  box-shadow: 5px 5px 0px #005202 !important;
+  transform: translate(-2px, -2px);
+}
+
+/* Make body background helpers completely transparent so base green shows */
+.bg-gray-50,
+.bg-gray-100 {
+  background-color: transparent !important;
+}
+
+/* The Navigation bar needs to stand out */
+nav {
+  background-color: #008303 !important;
+  border-bottom: 4px solid #005202 !important;
+}
+
+/* PROGRESS BARS */
+.progress-fill {
+  background-color: #008303 !important;
+  border-right: 3px solid #005202;
+}
+
+/* SCROLLBAR */
+::-webkit-scrollbar {
+  width: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: #006902;
+  border-left: 3px solid #005202;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ffffff;
+  border: 3px solid #005202;
+  border-radius: 6px;
+}
+
+/* LEAFLET MAP */
+.leaflet-container {
+  border: 4px solid #005202 !important;
+  box-shadow: 6px 6px 0px #005202 !important;
+  border-radius: 16px !important;
+}
+
+/* MISC ICONS/SVG */
+.text-emerald-400 svg,
+.text-emerald-500 svg {
+  color: inherit !important;
+}
+
+.pulse-dot::after {
+  display: none;
+}
+
+/* Override to force white text inside cards */
+.force-white, .force-white * {
+  color: #ffffff !important;
+}
