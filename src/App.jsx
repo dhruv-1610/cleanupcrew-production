@@ -11,6 +11,7 @@ import Leaderboard from './pages/Leaderboard';
 import Transparency from './pages/Transparency';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import VerifyEmail from './pages/VerifyEmail';
 import Dashboard from './pages/Dashboard';
 import AdminPanel from './pages/AdminPanel';
 import ReportSpot from './pages/ReportSpot';
@@ -18,7 +19,7 @@ import Certificate from './pages/Certificate';
 
 function AnimatedRoutes() {
   const location = useLocation();
-  const noFooterPaths = ['/map', '/login', '/register'];
+  const noFooterPaths = ['/map', '/login', '/register', '/verify-email'];
   const showFooter = !noFooterPaths.includes(location.pathname);
 
   return (
@@ -35,6 +36,7 @@ function AnimatedRoutes() {
             <Route path="/transparency" element={<Transparency />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/admin" element={<AdminPanel />} />
             <Route path="/report" element={<ReportSpot />} />
