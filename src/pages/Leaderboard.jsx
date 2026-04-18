@@ -15,24 +15,10 @@ export default function Leaderboard() {
     const { data: leaderboard, loading } = useApiData('/api/leaderboard', { volunteers: [], donors: [] }, {
         transform: (res) => {
             const raw = res.leaderboard || res;
-            // Transform backend format to UI format
-            const volunteers = (raw.volunteers || []).map((v, i) => ({
-                rank: i + 1,
-                name: v.user?.profile?.name || 'Unknown',
-                drives: v.driveCount || 0,
-                hours: (v.driveCount || 0) * 5,
-                wasteKg: (v.driveCount || 0) * 45,
-                badges: Math.min(v.driveCount || 0, 8),
-                points: (v.driveCount || 0) * 200,
-            }));
-            const donors = (raw.donors || []).map((d, i) => ({
-                rank: i + 1,
-                name: d.user?.profile?.name || 'Unknown',
-                amount: d.totalAmount || 0,
-                drives: Math.ceil((d.totalAmount || 0) / 500000),
-                badges: Math.min(Math.ceil((d.totalAmount || 0) / 200000), 6),
-            }));
-            return { volunteers, donors };
+            return {
+                volunteers: raw.volunteers || [],
+                donors: raw.donors || [],
+            };
         }
     });
 
@@ -118,7 +104,7 @@ export default function Leaderboard() {
                         const heights = ['h-28', 'h-44', 'h-20'];
                         const positions = [2, 1, 3];
                         const pos = positions[idx];
-                        const val = tab === 'volunteers' ? (u.points || 0).toLocaleString() + ' pts' : '₹' + ((u.amount || 0) / 100000).toFixed(0) + 'k';
+                        const val = tab === 'volunteers' ? (u.points || 0).toLocaleString() + ' pts' : '₹' + ((u.amount || 0) / 100).toLocaleString('en-IN');
 
                         return (
                             <motion.div key={u.rank || idx} variants={fadeUp} className="flex flex-col items-center">
@@ -175,7 +161,7 @@ export default function Leaderboard() {
                                 </div>
                                 <div className="text-right">
                                     <div className={`text-xl font-bold ${tab === 'volunteers' ? 'text-emerald-400' : 'text-cyan-400'}`}>
-                                        {tab === 'volunteers' ? `${(item.points || 0).toLocaleString()} pts` : `₹${((item.amount || 0) / 100000).toFixed(0)}k`}
+                                        {tab === 'volunteers' ? `${(item.points || 0).toLocaleString()} pts` : `₹${((item.amount || 0) / 100).toLocaleString('en-IN')}`}
                                     </div>
                                 </div>
                             </div>
