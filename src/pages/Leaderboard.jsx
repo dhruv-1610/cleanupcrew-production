@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { mockLeaderboard, mockBadges } from '../data/mockData';
+import { mockBadges } from '../data/mockData';
 import { useApiData } from '../hooks/useApiData';
 import { Award, Trophy, DollarSign, TrendingUp, Crown, Medal, Star } from 'lucide-react';
 
@@ -12,12 +12,32 @@ const fadeUp = {
 export default function Leaderboard() {
     const [tab, setTab] = useState('volunteers');
 
-    const { data: leaderboard } = useApiData('/api/leaderboard', mockLeaderboard, {
-        transform: (res) => res.leaderboard || res
+    const { data: leaderboard, loading } = useApiData('/api/leaderboard', { volunteers: [], donors: [] }, {
+        transform: (res) => {
+            const raw = res.leaderboard || res;
+            // Transform backend format to UI format
+            const volunteers = (raw.volunteers || []).map((v, i) => ({
+                rank: i + 1,
+                name: v.user?.profile?.name || 'Unknown',
+                drives: v.driveCount || 0,
+                hours: (v.driveCount || 0) * 5,
+                wasteKg: (v.driveCount || 0) * 45,
+                badges: Math.min(v.driveCount || 0, 8),
+                points: (v.driveCount || 0) * 200,
+            }));
+            const donors = (raw.donors || []).map((d, i) => ({
+                rank: i + 1,
+                name: d.user?.profile?.name || 'Unknown',
+                amount: d.totalAmount || 0,
+                drives: Math.ceil((d.totalAmount || 0) / 500000),
+                badges: Math.min(Math.ceil((d.totalAmount || 0) / 200000), 6),
+            }));
+            return { volunteers, donors };
+        }
     });
-    const lb = leaderboard?.volunteers?.length > 0 ? leaderboard : mockLeaderboard;
-    const volunteers = lb.volunteers || [];
-    const donors = lb.donors || [];
+
+    const volunteers = leaderboard?.volunteers || [];
+    const donors = leaderboard?.donors || [];
 
     const rankStyle = (rank) => {
         if (rank === 1) return 'bg-[rgba(234,179,8,0.06)] border border-yellow-500/20 shadow-[0_0_30px_rgba(234,179,8,0.08)]';
@@ -67,7 +87,25 @@ export default function Leaderboard() {
                     </div>
                 </motion.div>
 
+                {/* Loading */}
+                {loading && (
+                    <div className="text-center py-20">
+                        <div className="w-8 h-8 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin mx-auto mb-4" />
+                        <p className="text-slate-400 text-sm">Loading leaderboard...</p>
+                    </div>
+                )}
+
+                {/* Empty state */}
+                {!loading && (tab === 'volunteers' ? volunteers : donors).length === 0 && (
+                    <div className="glass-card p-16 text-center">
+                        <Trophy size={48} className="text-slate-600 mx-auto mb-4" />
+                        <h3 className="text-lg font-bold text-slate-300 mb-2">No {tab} yet</h3>
+                        <p className="text-sm text-slate-400">Be the first to {tab === 'volunteers' ? 'volunteer at a drive' : 'donate to a drive'}!</p>
+                    </div>
+                )}
+
                 {/* Top 3 Podium */}
+                {!loading && (tab === 'volunteers' ? volunteers : donors).length >= 3 && (
                 <motion.div
                     initial="hidden"
                     animate="visible"
@@ -80,7 +118,7 @@ export default function Leaderboard() {
                         const heights = ['h-28', 'h-44', 'h-20'];
                         const positions = [2, 1, 3];
                         const pos = positions[idx];
-                        const val = tab === 'volunteers' ? (u.points || 0).toLocaleString() + ' pts' : '₹' + ((u.amount || 0) / 1000).toFixed(0) + 'k';
+                        const val = tab === 'volunteers' ? (u.points || 0).toLocaleString() + ' pts' : '₹' + ((u.amount || 0) / 100000).toFixed(0) + 'k';
 
                         return (
                             <motion.div key={u.rank || idx} variants={fadeUp} className="flex flex-col items-center">
@@ -97,8 +135,10 @@ export default function Leaderboard() {
                         );
                     })}
                 </motion.div>
+                )}
 
                 {/* Full list */}
+                {!loading && (
                 <motion.div
                     initial="hidden"
                     animate="visible"
@@ -135,7 +175,7 @@ export default function Leaderboard() {
                                 </div>
                                 <div className="text-right">
                                     <div className={`text-xl font-bold ${tab === 'volunteers' ? 'text-emerald-400' : 'text-cyan-400'}`}>
-                                        {tab === 'volunteers' ? `${(item.points || 0).toLocaleString()} pts` : `₹${((item.amount || 0) / 1000).toFixed(0)}k`}
+                                        {tab === 'volunteers' ? `${(item.points || 0).toLocaleString()} pts` : `₹${((item.amount || 0) / 100000).toFixed(0)}k`}
                                     </div>
                                 </div>
                             </div>
@@ -143,6 +183,7 @@ export default function Leaderboard() {
                         );
                     })}
                 </motion.div>
+                )}
 
                 {/* Badges Section */}
                 <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="mt-20">
