@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
-import { mockSpots, mockDrives } from '../data/mockData';
 import { useApiData } from '../hooks/useApiData';
-import { MapPin, AlertTriangle, CheckCircle2, Clock, Filter, X, Layers, Navigation } from 'lucide-react';
+import { apiBaseUrl } from '../lib/api';
+import { MapPin, AlertTriangle, CheckCircle2, Clock, Filter, X, Layers, Navigation, Plus } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 
 function FlyToCenter({ center }) {
     const map = useMap();
-    useEffect(() => { map.flyTo(center, 11, { duration: 1.5 }); }, [center]);
+    useEffect(() => { map.flyTo(center, 5, { duration: 1.5 }); }, [center]);
     return null;
 }
 
@@ -30,9 +31,10 @@ export default function MapPage() {
     const [selectedSpot, setSelectedSpot] = useState(null);
     const [statusFilter, setStatusFilter] = useState('all');
     const [showLegend, setShowLegend] = useState(true);
-    const [center] = useState([19.076, 72.8777]);
+    const [center] = useState([20.5937, 78.9629]); // Center of India
 
-    const { data: spots } = useApiData('/api/map/reports', mockSpots, {
+    // Fetch all reports for the map
+    const { data: spots, loading } = useApiData('/api/reports', [], {
         transform: (res) => {
             const arr = Array.isArray(res) ? res : (res.reports || []);
             return arr.map(r => ({
@@ -43,11 +45,14 @@ export default function MapPage() {
                     : r.location,
                 severity: r.severity || 'medium',
                 status: r.status || 'reported',
+                photoUrl: r.photoUrls?.[0] 
+                    ? (r.photoUrls[0].startsWith('http') ? r.photoUrls[0] : `${apiBaseUrl}${r.photoUrls[0]}`)
+                    : null,
             }));
         }
     });
 
-    const allSpots = spots?.length > 0 ? spots : mockSpots;
+    const allSpots = spots || [];
     const filteredSpots = allSpots.filter(s => statusFilter === 'all' || s.status === statusFilter);
 
     return (
@@ -59,9 +64,12 @@ export default function MapPage() {
                         <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-100 tracking-tight font-[var(--font-display)]">
                             Cleanup Map
                         </h1>
-                        <p className="text-sm text-slate-400 mt-1">{filteredSpots.length} reported spots across the city</p>
+                        <p className="text-sm text-slate-400 mt-1">{filteredSpots.length} reported spots across India</p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
+                        <Link to="/report" className="btn-primary flex items-center gap-2 !py-2 !px-4 !text-xs">
+                            <Plus size={14} /> Report Spot
+                        </Link>
                         {['all', 'reported', 'verified', 'drive_created', 'cleaned'].map(s => (
                             <button
                                 key={s}
@@ -83,7 +91,7 @@ export default function MapPage() {
                 <div className="absolute inset-0 rounded-2xl overflow-hidden border border-slate-700/20 shadow-[0_4px_40px_rgba(0,0,0,0.4)]">
                     <MapContainer
                         center={center}
-                        zoom={11}
+                        zoom={5}
                         style={{ height: '100%', width: '100%', background: '#0a1628' }}
                         zoomControl={false}
                     >
@@ -107,7 +115,10 @@ export default function MapPage() {
                                     eventHandlers={{ click: () => setSelectedSpot(spot) }}
                                 >
                                     <Popup>
-                                        <div className="text-xs" style={{ color: '#0f172a' }}>
+                                        <div className="text-xs" style={{ color: '#0f172a', minWidth: 200 }}>
+                                            {spot.photoUrl && (
+                                                <img src={spot.photoUrl} alt="" className="w-full h-24 object-cover rounded mb-2" />
+                                            )}
                                             <strong>{spot.description}</strong>
                                             <br />
                                             <span style={{ textTransform: 'capitalize' }}>Severity: {spot.severity}</span>
@@ -170,7 +181,7 @@ export default function MapPage() {
                                     <div key={status} className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                             <Icon size={14} className={color} />
-                                            <span className="text-xs text-slate-300 capitalize">{status}</span>
+                                            <span className="text-xs text-slate-300 capitalize">{status.replace('_', ' ')}</span>
                                         </div>
                                         <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${bg} ${color} border ${border}`}>{count}</span>
                                     </div>
@@ -191,28 +202,31 @@ export default function MapPage() {
                         className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-lg"
                     >
                         <div className="glass-card-heavy p-5">
-                            <div className="flex justify-between items-start mb-3">
-                                <div>
-                                    <h3 className="text-base font-bold text-slate-100">{selectedSpot.description}</h3>
-                                    <div className="flex gap-2 mt-1">
-                                        <span className="text-xs text-slate-400 capitalize">📍 {selectedSpot.location.lat.toFixed(4)}, {selectedSpot.location.lng.toFixed(4)}</span>
+                            <div className="flex gap-4">
+                                {selectedSpot.photoUrl && (
+                                    <img src={selectedSpot.photoUrl} alt="" className="w-20 h-20 rounded-xl object-cover flex-shrink-0 border border-slate-700/20" />
+                                )}
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <h3 className="text-base font-bold text-slate-100 line-clamp-2">{selectedSpot.description}</h3>
+                                        <button onClick={() => setSelectedSpot(null)} className="text-slate-500 hover:text-slate-300 p-1 flex-shrink-0">
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+                                    <div className="text-xs text-slate-400 mb-3">📍 {selectedSpot.location.lat.toFixed(4)}, {selectedSpot.location.lng.toFixed(4)}</div>
+                                    <div className="flex gap-3">
+                                        <span className={`px-3 py-1 text-xs font-semibold rounded-lg capitalize border ${(statusIcons[selectedSpot.status] || statusIcons.reported).bg} ${(statusIcons[selectedSpot.status] || statusIcons.reported).color} ${(statusIcons[selectedSpot.status] || statusIcons.reported).border}`}>
+                                            {selectedSpot.status.replace('_', ' ')}
+                                        </span>
+                                        <span className={`px-3 py-1 text-xs font-semibold rounded-lg capitalize border`} style={{
+                                            backgroundColor: `${severityColors[selectedSpot.severity].fill}15`,
+                                            color: severityColors[selectedSpot.severity].fill,
+                                            borderColor: `${severityColors[selectedSpot.severity].fill}25`,
+                                        }}>
+                                            {selectedSpot.severity} severity
+                                        </span>
                                     </div>
                                 </div>
-                                <button onClick={() => setSelectedSpot(null)} className="text-slate-500 hover:text-slate-300 p-1">
-                                    <X size={18} />
-                                </button>
-                            </div>
-                            <div className="flex gap-3">
-                                <span className={`px-3 py-1 text-xs font-semibold rounded-lg capitalize border ${(statusIcons[selectedSpot.status] || statusIcons.reported).bg} ${(statusIcons[selectedSpot.status] || statusIcons.reported).color} ${(statusIcons[selectedSpot.status] || statusIcons.reported).border}`}>
-                                    {selectedSpot.status}
-                                </span>
-                                <span className={`px-3 py-1 text-xs font-semibold rounded-lg capitalize border`} style={{
-                                    backgroundColor: `${severityColors[selectedSpot.severity].fill}15`,
-                                    color: severityColors[selectedSpot.severity].fill,
-                                    borderColor: `${severityColors[selectedSpot.severity].fill}25`,
-                                }}>
-                                    {selectedSpot.severity} severity
-                                </span>
                             </div>
                         </div>
                     </motion.div>

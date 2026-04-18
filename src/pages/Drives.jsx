@@ -1,28 +1,37 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { mockDrives } from '../data/mockData';
 import { useApiData } from '../hooks/useApiData';
-import { MapPin, Calendar, Clock, Search, ChevronDown, ArrowRight, Users, DollarSign } from 'lucide-react';
+import { apiBaseUrl } from '../lib/api';
+import { MapPin, Calendar, Clock, Search, ChevronDown, ArrowRight, Users, DollarSign, Plus } from 'lucide-react';
 
 const fadeUp = {
     hidden: { opacity: 0, y: 30 },
     visible: (i = 0) => ({ opacity: 1, y: 0, transition: { delay: i * 0.05, duration: 0.6 } }),
 };
 
+// Stock images for drives that don't have a report photo
+const stockImages = [
+    'https://images.unsplash.com/photo-1618477461853-cf6ed80f4710?w=600&q=80',
+    'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?w=600&q=80',
+    'https://images.unsplash.com/photo-1605600659908-0ef719419d41?w=600&q=80',
+    'https://images.unsplash.com/photo-1530587191325-3db32d826c18?w=600&q=80',
+    'https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=600&q=80',
+];
+
 export default function Drives() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
     const [severityFilter, setSeverityFilter] = useState('all');
 
-    const { data: drives } = useApiData('/api/drives', mockDrives, {
+    // Fetch drives
+    const { data: drives, loading } = useApiData('/api/drives', [], {
         transform: (res) => {
-            // API returns { drives: [...] } or array directly
             const arr = Array.isArray(res) ? res : (res.drives || []);
             return arr.map(d => ({
                 ...d,
                 id: d._id || d.id,
-                location: d.location?.address ? d.location : { address: 'Unknown', lat: 0, lng: 0, ...d.location },
+                location: d.location?.address ? d.location : { address: 'India', lat: 0, lng: 0, ...d.location },
                 roles: d.roles || (d.requiredRoles ? Object.fromEntries(
                     d.requiredRoles.map(r => [r.role, { max: r.capacity, filled: r.booked || 0 }])
                 ) : {}),
@@ -36,7 +45,25 @@ export default function Drives() {
         }
     });
 
-    const allDrives = drives?.length > 0 ? drives : mockDrives;
+    // Fetch reports to get photos for drives (via reportId match)
+    const { data: reports } = useApiData('/api/reports', [], {
+        transform: (res) => {
+            const arr = Array.isArray(res) ? res : (res.reports || []);
+            return arr;
+        }
+    });
+
+    // Build a reportId -> photoUrl map
+    const reportPhotoMap = {};
+    (reports || []).forEach(r => {
+        const id = r._id || r.id;
+        if (r.photoUrls?.length > 0) {
+            const url = r.photoUrls[0];
+            reportPhotoMap[id] = url.startsWith('http') ? url : `${apiBaseUrl}${url}`;
+        }
+    });
+
+    const allDrives = drives || [];
 
     const filtered = allDrives.filter(d => {
         const matchSearch = d.title?.toLowerCase().includes(search.toLowerCase()) || d.location?.address?.toLowerCase().includes(search.toLowerCase());
@@ -44,6 +71,26 @@ export default function Drives() {
         const matchSeverity = severityFilter === 'all' || d.severity === severityFilter;
         return matchSearch && matchStatus && matchSeverity;
     });
+
+    // Get a photo for a drive
+    const getDrivePhoto = (drive, index) => {
+        // First try the report photo
+        if (drive.reportId && reportPhotoMap[drive.reportId]) {
+            return reportPhotoMap[drive.reportId];
+        }
+        // Fallback to stock image
+        return stockImages[index % stockImages.length];
+    };
+
+    // Get location label from GeoJSON coordinates
+    const getLocationLabel = (drive) => {
+        if (drive.location?.address && drive.location.address !== 'India') {
+            return drive.location.address.split(',')[0];
+        }
+        // Build from title
+        const parts = drive.title?.split(' ') || [];
+        return parts.slice(0, 2).join(' ') || 'India';
+    };
 
     return (
         <div className="min-h-screen pt-32 pb-24 relative">
@@ -57,7 +104,7 @@ export default function Drives() {
             >
                 <source src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260329_050842_be71947f-f16e-4a14-810c-06e83d23ddb5.mp4" type="video/mp4" />
             </video>
-            {/* Background overlay — balances video visibility and readability */}
+            {/* Background overlay */}
             <div style={{ 
                 position: 'fixed', 
                 top: 0, 
@@ -72,12 +119,18 @@ export default function Drives() {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8" style={{ position: 'relative', zIndex: 3 }}>
                 {/* Header */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-12 relative">
-                    {/* Ambient glow behind text specifically for video contrast */}
                     <div className="absolute -inset-10 bg-[radial-gradient(ellipse_at_center,_rgba(5,13,26,0.85)_0%,_rgba(5,13,26,0)_70%)] pointer-events-none -z-10" />
-                    <h1 className="text-5xl sm:text-6xl font-extrabold text-white tracking-tight mb-4 font-[var(--font-display)] drop-shadow-md">
-                        Cleanup Drives
-                    </h1>
-                    <p className="text-lg text-slate-300 max-w-lg drop-shadow-sm font-medium">Browse all cleanup drives across India. Join, donate, or organize your own.</p>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                            <h1 className="text-5xl sm:text-6xl font-extrabold text-white tracking-tight mb-4 font-[var(--font-display)] drop-shadow-md">
+                                Cleanup Drives
+                            </h1>
+                            <p className="text-lg text-slate-300 max-w-lg drop-shadow-sm font-medium">Browse all cleanup drives across India. Join, donate, or organize your own.</p>
+                        </div>
+                        <Link to="/report" className="btn-primary flex items-center gap-2 !py-3 !px-6 self-start">
+                            <Plus size={18} /> Report a Spot
+                        </Link>
+                    </div>
                 </motion.div>
 
                 {/* Filters */}
@@ -124,29 +177,51 @@ export default function Drives() {
                     </div>
                 </motion.div>
 
+                {/* Loading */}
+                {loading && (
+                    <div className="text-center py-20">
+                        <div className="w-8 h-8 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin mx-auto mb-4" />
+                        <p className="text-slate-400 text-sm">Loading drives...</p>
+                    </div>
+                )}
+
                 {/* Results Count */}
-                <div className="text-sm font-medium text-slate-400 mb-8">{filtered.length} drive{filtered.length !== 1 ? 's' : ''} found</div>
+                {!loading && <div className="text-sm font-medium text-slate-400 mb-8">{filtered.length} drive{filtered.length !== 1 ? 's' : ''} found</div>}
 
                 {/* Grid */}
+                {!loading && (
                 <motion.div
                     initial="hidden"
                     animate="visible"
                     variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
                     className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
                 >
-                    {filtered.map(drive => {
-                        const volProgress = (drive.currentVolunteers / drive.maxVolunteers) * 100;
-                        const fundProgress = (drive.currentFunding / drive.fundingGoal) * 100;
+                    {filtered.map((drive, idx) => {
+                        const volProgress = drive.maxVolunteers > 0 ? (drive.currentVolunteers / drive.maxVolunteers) * 100 : 0;
+                        const fundProgress = drive.fundingGoal > 0 ? (drive.currentFunding / drive.fundingGoal) * 100 : 0;
+                        const photo = getDrivePhoto(drive, idx);
 
                         return (
-                            <motion.div key={drive.id} variants={fadeUp} className="glass-card hover:translate-y-[-4px] transition-all flex flex-col">
-                                <div className="p-4 border-b border-slate-700/20 flex justify-between items-center">
-                                    <span className={`text-xs font-semibold uppercase py-1 px-3 rounded-full border ${drive.status === 'completed' ? 'bg-slate-500/10 text-slate-400 border-slate-500/15' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/15'}`}>
-                                        {drive.status}
-                                    </span>
-                                    <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                                        {drive.severity} severity
-                                    </span>
+                            <motion.div key={drive.id} variants={fadeUp} className="glass-card hover:translate-y-[-4px] transition-all flex flex-col overflow-hidden">
+                                {/* Drive Photo */}
+                                <div className="relative h-44 overflow-hidden">
+                                    <img 
+                                        src={photo} 
+                                        alt={drive.title} 
+                                        className="w-full h-full object-cover"
+                                        onError={e => { e.target.src = stockImages[idx % stockImages.length]; }}
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-[#050d1a] via-transparent to-transparent" />
+                                    <div className="absolute top-3 left-3 flex gap-2">
+                                        <span className={`text-xs font-semibold uppercase py-1 px-3 rounded-full border backdrop-blur-sm ${drive.status === 'completed' ? 'bg-slate-900/70 text-slate-400 border-slate-500/15' : drive.status === 'active' ? 'bg-emerald-900/70 text-emerald-400 border-emerald-500/15' : 'bg-blue-900/70 text-blue-400 border-blue-500/15'}`}>
+                                            {drive.status}
+                                        </span>
+                                    </div>
+                                    <div className="absolute top-3 right-3">
+                                        <span className="text-xs font-medium uppercase tracking-wider text-white/70 bg-black/40 backdrop-blur-sm px-2 py-1 rounded-lg">
+                                            {drive.severity}
+                                        </span>
+                                    </div>
                                 </div>
 
                                 <div className="p-6 flex-1 flex flex-col">
@@ -156,7 +231,7 @@ export default function Drives() {
 
                                     <div className="flex items-center gap-2 text-sm text-slate-400 mb-5 border-b border-slate-700/15 pb-4">
                                         <MapPin size={16} className="text-emerald-400/60" />
-                                        <span className="truncate">{drive.location.address.split(',')[0]}</span>
+                                        <span className="truncate">{getLocationLabel(drive)}</span>
                                     </div>
 
                                     {/* Role Breakdown */}
@@ -175,7 +250,7 @@ export default function Drives() {
                                             <span className="text-emerald-400">{drive.currentVolunteers} / {drive.maxVolunteers}</span>
                                         </div>
                                         <div className="h-2 bg-slate-800/50 rounded-full overflow-hidden">
-                                            <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full" style={{ width: `${volProgress}%` }} />
+                                            <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full" style={{ width: `${Math.min(volProgress, 100)}%` }} />
                                         </div>
                                     </div>
 
@@ -185,14 +260,13 @@ export default function Drives() {
                                             <span className="text-cyan-400">₹{(drive.currentFunding / 1000).toFixed(0)}k / {(drive.fundingGoal / 1000).toFixed(0)}k</span>
                                         </div>
                                         <div className="h-2 bg-slate-800/50 rounded-full overflow-hidden">
-                                            <div className="h-full bg-gradient-to-r from-cyan-500 to-blue-400 rounded-full" style={{ width: `${fundProgress}%` }} />
+                                            <div className="h-full bg-gradient-to-r from-cyan-500 to-blue-400 rounded-full" style={{ width: `${Math.min(fundProgress, 100)}%` }} />
                                         </div>
                                     </div>
 
                                     <div className="mt-auto flex flex-col sm:flex-row items-center justify-between pt-4 border-t border-slate-700/15 gap-3">
                                         <div className="flex flex-col text-xs text-slate-400 text-center sm:text-left">
-                                            <div className="flex items-center gap-1 justify-center sm:justify-start"><Calendar size={12} /> {new Date(drive.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
-                                            <div className="flex items-center gap-1 justify-center sm:justify-start"><Clock size={12} /> {drive.time}</div>
+                                            <div className="flex items-center gap-1 justify-center sm:justify-start"><Calendar size={12} /> {new Date(drive.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
                                         </div>
                                         <Link
                                             to={`/drives/${drive.id}`}
@@ -206,12 +280,16 @@ export default function Drives() {
                         );
                     })}
                 </motion.div>
+                )}
 
-                {filtered.length === 0 && (
+                {!loading && filtered.length === 0 && (
                     <div className="text-center py-20 glass-card max-w-2xl mx-auto mt-12">
                         <div className="text-6xl mb-6">🔍</div>
                         <h3 className="text-2xl font-bold text-slate-100 font-[var(--font-display)] mb-3">No Drives Found</h3>
-                        <p className="text-slate-400">Try adjusting your search or filters.</p>
+                        <p className="text-slate-400 mb-6">Try adjusting your search or filters.</p>
+                        <Link to="/report" className="btn-primary inline-flex items-center gap-2">
+                            <Plus size={16} /> Report a Dirty Spot
+                        </Link>
                     </div>
                 )}
             </div>

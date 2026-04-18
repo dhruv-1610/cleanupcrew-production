@@ -19,8 +19,8 @@ export default function ReportSpot() {
     const [photoName, setPhotoName] = useState('');
     const [photoPreview, setPhotoPreview] = useState(null);
     const fileInputRef = useRef(null);
-
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [errorMsg, setErrorMsg] = useState('');
 
     if (authLoading) return (
         <div className="min-h-screen flex items-center justify-center">
@@ -31,42 +31,59 @@ export default function ReportSpot() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!form.description || !form.severity || !form.address) return;
-        
-        setIsSubmitting(true);
-        if (apiOnline && fileInputRef.current?.files?.[0]) {
-            try {
-                const formData = new FormData();
-                formData.append('description', form.description);
-                formData.append('severity', form.severity);
-                formData.append('address', form.address);
-                if (form.lat && form.lng) {
-                    formData.append('lng', form.lng);
-                    formData.append('lat', form.lat);
-                }
-                formData.append('photo', fileInputRef.current.files[0]);
+        setErrorMsg('');
 
-                await api.post('/api/reports', formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
-                });
-            } catch (err) {
-                console.error('Failed to submit report:', err);
-                setIsSubmitting(false);
-                return; // Optionally show error UI
-            }
+        if (!form.description || !form.severity || !form.address) {
+            setErrorMsg('Please fill all required fields.');
+            return;
         }
-        setIsSubmitting(false);
-        setSubmitted(true);
+        if (!form.lat || !form.lng) {
+            setErrorMsg('Please detect your location or enter coordinates.');
+            return;
+        }
+        if (!fileInputRef.current?.files?.[0]) {
+            setErrorMsg('Please upload a photo of the spot.');
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const formData = new FormData();
+            formData.append('description', form.description);
+            formData.append('severity', form.severity);
+            formData.append('lat', form.lat);
+            formData.append('lng', form.lng);
+            formData.append('photo', fileInputRef.current.files[0]);
+
+            const res = await api.post('/api/reports', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+
+            if (res.data?.duplicate) {
+                setErrorMsg('A similar report already exists near this location. Your report was merged.');
+            }
+
+            setIsSubmitting(false);
+            setSubmitted(true);
+        } catch (err) {
+            const msg = err.response?.data?.error?.message || err.response?.data?.message || 'Failed to submit report. Please try again.';
+            setErrorMsg(msg);
+            setIsSubmitting(false);
+        }
     };
 
     const detectLocation = () => {
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
                 (pos) => {
-                    setForm(f => ({ ...f, lat: pos.coords.latitude.toFixed(4), lng: pos.coords.longitude.toFixed(4) }));
+                    setForm(f => ({ ...f, lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6) }));
                 },
-                () => { /* fallback */ }
+                (err) => {
+                    setErrorMsg('Location detection failed. Please allow location access or enter manually.');
+                }
             );
+        } else {
+            setErrorMsg('Geolocation is not supported by your browser.');
         }
     };
 
@@ -85,8 +102,9 @@ export default function ReportSpot() {
                     <p className="text-slate-400 mb-6">Our team will verify this location soon. You'll be notified when a cleanup drive is created.</p>
                     <div className="flex flex-col gap-3">
                         <button onClick={() => navigate('/map')} className="btn-primary">View on Map</button>
-                        <button onClick={() => { setSubmitted(false); setForm({ description: '', severity: '', lat: '', lng: '', address: '' }); }} className="btn-secondary">
-                            Report Another
+                        <button onClick={() => navigate('/drives')} className="btn-secondary">Browse Drives</button>
+                        <button onClick={() => { setSubmitted(false); setForm({ description: '', severity: '', lat: '', lng: '', address: '' }); setPhotoName(''); setPhotoPreview(null); }} className="text-sm text-slate-400 hover:text-emerald-400 transition-colors mt-2">
+                            Report Another Spot
                         </button>
                     </div>
                 </motion.div>
@@ -104,6 +122,13 @@ export default function ReportSpot() {
                     <p className="text-slate-400 mb-8">Found a dirty location? Report it and our team will verify for a potential cleanup drive.</p>
                 </motion.div>
 
+                {/* Error Message */}
+                {errorMsg && (
+                    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium flex items-center gap-2">
+                        <AlertTriangle size={16} /> {errorMsg}
+                    </motion.div>
+                )}
+
                 <motion.form
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -113,7 +138,7 @@ export default function ReportSpot() {
                 >
                     {/* Photo upload */}
                     <div>
-                        <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Upload Photo</label>
+                        <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Upload Photo *</label>
                         <div
                             onClick={() => fileInputRef.current?.click()}
                             className="border-2 border-dashed border-slate-700/30 rounded-xl p-10 text-center hover:border-emerald-500/20 transition-colors cursor-pointer bg-slate-800/20"
@@ -151,7 +176,7 @@ export default function ReportSpot() {
 
                     {/* Location */}
                     <div>
-                        <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Location</label>
+                        <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Location *</label>
                         <input
                             type="text"
                             value={form.address}
@@ -159,21 +184,28 @@ export default function ReportSpot() {
                             placeholder="Enter address or area name"
                             className="w-full px-4 py-3 rounded-xl text-sm mb-3"
                         />
-                        <button
-                            type="button"
-                            onClick={detectLocation}
-                            className="flex items-center gap-2 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
-                        >
-                            <MapPin size={14} /> Detect my location
-                        </button>
-                        {form.lat && form.lng && (
-                            <p className="text-xs text-slate-400 mt-2">📍 {form.lat}, {form.lng}</p>
-                        )}
+                        <div className="flex items-center gap-4">
+                            <button
+                                type="button"
+                                onClick={detectLocation}
+                                className="flex items-center gap-2 text-xs text-emerald-400 hover:text-emerald-300 transition-colors font-medium bg-emerald-500/10 px-3 py-2 rounded-lg border border-emerald-500/15"
+                            >
+                                <MapPin size={14} /> Detect my location
+                            </button>
+                            {form.lat && form.lng && (
+                                <p className="text-xs text-emerald-400 font-medium">📍 {form.lat}, {form.lng}</p>
+                            )}
+                        </div>
+                        {/* Manual coordinate input */}
+                        <div className="grid grid-cols-2 gap-3 mt-3">
+                            <input type="number" step="any" value={form.lat} onChange={e => setForm(f => ({ ...f, lat: e.target.value }))} placeholder="Latitude" className="px-3 py-2 rounded-xl text-sm" />
+                            <input type="number" step="any" value={form.lng} onChange={e => setForm(f => ({ ...f, lng: e.target.value }))} placeholder="Longitude" className="px-3 py-2 rounded-xl text-sm" />
+                        </div>
                     </div>
 
                     {/* Description */}
                     <div>
-                        <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Description</label>
+                        <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Description *</label>
                         <textarea
                             value={form.description}
                             onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
@@ -185,7 +217,7 @@ export default function ReportSpot() {
 
                     {/* Severity */}
                     <div>
-                        <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Severity Level</label>
+                        <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Severity Level *</label>
                         <div className="grid grid-cols-3 gap-3">
                             {[
                                 { value: 'low', label: 'Low', active: 'border-green-500/30 bg-green-500/10 text-green-400' },
@@ -207,7 +239,7 @@ export default function ReportSpot() {
 
                     <button
                         type="submit"
-                        disabled={!form.description || !form.severity || !form.address || isSubmitting}
+                        disabled={!form.description || !form.severity || !form.lat || !form.lng || isSubmitting}
                         className="btn-primary w-full flex items-center justify-center gap-2 !py-3.5 disabled:opacity-50"
                     >
                         {isSubmitting ? (
