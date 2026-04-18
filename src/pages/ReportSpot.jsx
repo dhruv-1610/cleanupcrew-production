@@ -1,26 +1,51 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
+import L from 'leaflet';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
-import { MapPin, Camera, AlertTriangle, Send, CheckCircle2, Upload } from 'lucide-react';
+import { MapPin, Send, CheckCircle2, Upload, AlertTriangle, Crosshair, Search } from 'lucide-react';
+import 'leaflet/dist/leaflet.css';
+
+// Custom green marker icon
+const pinIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+    iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
+});
+
+function LocationPicker({ position, setPosition }) {
+    useMapEvents({
+        click(e) { setPosition([e.latlng.lat, e.latlng.lng]); },
+    });
+    return position ? <Marker position={position} icon={pinIcon} /> : null;
+}
+
+function FlyTo({ center }) {
+    const map = useMap();
+    useEffect(() => { if (center) map.flyTo(center, 16, { duration: 1.2 }); }, [center]);
+    return null;
+}
 
 export default function ReportSpot() {
-    const { isAuthenticated, loading: authLoading, apiOnline } = useAuth();
+    const { isAuthenticated, loading: authLoading } = useAuth();
     const navigate = useNavigate();
-    const [submitted, setSubmitted] = useState(false);
-    const [form, setForm] = useState({
-        description: '',
-        severity: '',
-        lat: '',
-        lng: '',
-        address: '',
-    });
-    const [photoName, setPhotoName] = useState('');
-    const [photoPreview, setPhotoPreview] = useState(null);
     const fileInputRef = useRef(null);
+
+    const [submitted, setSubmitted] = useState(false);
+    const [position, setPosition] = useState(null);
+    const [address, setAddress] = useState('');
+    const [description, setDescription] = useState('');
+    const [severity, setSeverity] = useState('');
+    const [photoPreview, setPhotoPreview] = useState(null);
+    const [photoName, setPhotoName] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
+    const [detectingLocation, setDetectingLocation] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searching, setSearching] = useState(false);
+    const [flyTarget, setFlyTarget] = useState(null);
 
     if (authLoading) return (
         <div className="min-h-screen flex items-center justify-center">
@@ -29,223 +54,245 @@ export default function ReportSpot() {
     );
     if (!isAuthenticated) return <Navigate to="/login" />;
 
+    // Reverse geocode position to address
+    const reverseGeocode = async (lat, lng) => {
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`);
+            const data = await res.json();
+            if (data.display_name) setAddress(data.display_name.split(',').slice(0, 3).join(', '));
+        } catch { /* silent */ }
+    };
+
+    // When position changes, reverse geocode
+    const handlePositionChange = (pos) => {
+        setPosition(pos);
+        setFlyTarget(pos);
+        reverseGeocode(pos[0], pos[1]);
+    };
+
+    // Detect GPS
+    const detectLocation = () => {
+        setDetectingLocation(true);
+        setErrorMsg('');
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const loc = [pos.coords.latitude, pos.coords.longitude];
+                handlePositionChange(loc);
+                setDetectingLocation(false);
+            },
+            () => { setErrorMsg('Location access denied. Please search or click the map.'); setDetectingLocation(false); },
+            { enableHighAccuracy: true, timeout: 10000 }
+        );
+    };
+
+    // Search location
+    const searchLocation = async () => {
+        if (!searchQuery.trim()) return;
+        setSearching(true);
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=1&countrycodes=in`);
+            const data = await res.json();
+            if (data[0]) {
+                const loc = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+                handlePositionChange(loc);
+                setAddress(data[0].display_name.split(',').slice(0, 3).join(', '));
+            } else { setErrorMsg('Location not found. Try a different search or click the map.'); }
+        } catch { setErrorMsg('Search failed. Click the map to pick location.'); }
+        setSearching(false);
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setErrorMsg('');
-
-        if (!form.description || !form.severity || !form.address) {
-            setErrorMsg('Please fill all required fields.');
-            return;
-        }
-        if (!form.lat || !form.lng) {
-            setErrorMsg('Please detect your location or enter coordinates.');
-            return;
-        }
-        if (!fileInputRef.current?.files?.[0]) {
-            setErrorMsg('Please upload a photo of the spot.');
-            return;
-        }
+        if (!position) { setErrorMsg('Please select a location on the map.'); return; }
+        if (!fileInputRef.current?.files?.[0]) { setErrorMsg('Please upload a photo.'); return; }
+        if (!description) { setErrorMsg('Please add a description.'); return; }
+        if (!severity) { setErrorMsg('Please select severity.'); return; }
 
         setIsSubmitting(true);
         try {
             const formData = new FormData();
-            formData.append('description', form.description);
-            formData.append('severity', form.severity);
-            formData.append('lat', form.lat);
-            formData.append('lng', form.lng);
+            formData.append('lat', position[0].toString());
+            formData.append('lng', position[1].toString());
+            formData.append('description', description);
+            formData.append('severity', severity);
             formData.append('photo', fileInputRef.current.files[0]);
-
-            const res = await api.post('/api/reports', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
-
-            if (res.data?.duplicate) {
-                setErrorMsg('A similar report already exists near this location. Your report was merged.');
-            }
-
-            setIsSubmitting(false);
+            await api.post('/api/reports', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
             setSubmitted(true);
         } catch (err) {
-            const msg = err.response?.data?.error?.message || err.response?.data?.message || 'Failed to submit report. Please try again.';
-            setErrorMsg(msg);
-            setIsSubmitting(false);
+            setErrorMsg(err.response?.data?.error?.message || 'Failed to submit. Try again.');
         }
-    };
-
-    const detectLocation = () => {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    setForm(f => ({ ...f, lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6) }));
-                },
-                (err) => {
-                    setErrorMsg('Location detection failed. Please allow location access or enter manually.');
-                }
-            );
-        } else {
-            setErrorMsg('Geolocation is not supported by your browser.');
-        }
+        setIsSubmitting(false);
     };
 
     if (submitted) {
         return (
             <div className="min-h-screen pt-32 pb-24 flex items-center justify-center px-4">
-                <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="glass-card-heavy p-12 text-center max-w-md"
-                >
+                <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="glass-card-heavy p-12 text-center max-w-md">
                     <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', delay: 0.2 }}>
                         <CheckCircle2 size={64} className="text-emerald-400 mx-auto mb-6" />
                     </motion.div>
                     <h2 className="text-2xl font-extrabold text-slate-100 mb-2 font-[var(--font-display)]">Spot Reported!</h2>
-                    <p className="text-slate-400 mb-6">Our team will verify this location soon. You'll be notified when a cleanup drive is created.</p>
+                    <p className="text-slate-400 mb-6">Our team will verify and schedule a cleanup drive soon.</p>
                     <div className="flex flex-col gap-3">
                         <button onClick={() => navigate('/map')} className="btn-primary">View on Map</button>
                         <button onClick={() => navigate('/drives')} className="btn-secondary">Browse Drives</button>
-                        <button onClick={() => { setSubmitted(false); setForm({ description: '', severity: '', lat: '', lng: '', address: '' }); setPhotoName(''); setPhotoPreview(null); }} className="text-sm text-slate-400 hover:text-emerald-400 transition-colors mt-2">
-                            Report Another Spot
-                        </button>
                     </div>
                 </motion.div>
             </div>
         );
     }
 
+    const severities = [
+        { value: 'low', label: 'Low', desc: 'Minor litter', color: '#22c55e', bg: 'bg-green-500/10', border: 'border-green-500/25' },
+        { value: 'medium', label: 'Medium', desc: 'Scattered waste', color: '#eab308', bg: 'bg-yellow-500/10', border: 'border-yellow-500/25' },
+        { value: 'high', label: 'High', desc: 'Heavy dumping', color: '#ef4444', bg: 'bg-red-500/10', border: 'border-red-500/25' },
+    ];
+
     return (
-        <div className="min-h-screen pt-32 pb-24">
-            <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="min-h-screen pt-24 pb-24">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                    <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-100 tracking-tight mb-3 font-[var(--font-display)]">
-                        Report a <span className="gradient-text">Spot</span>
+                    <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-100 tracking-tight mb-2 font-[var(--font-display)]">
+                        Report a <span className="gradient-text">Dirty Spot</span>
                     </h1>
-                    <p className="text-slate-400 mb-8">Found a dirty location? Report it and our team will verify for a potential cleanup drive.</p>
+                    <p className="text-slate-400 mb-8">Pick the location, snap a photo, and we'll handle the rest.</p>
                 </motion.div>
 
-                {/* Error Message */}
                 {errorMsg && (
                     <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium flex items-center gap-2">
                         <AlertTriangle size={16} /> {errorMsg}
                     </motion.div>
                 )}
 
-                <motion.form
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    onSubmit={handleSubmit}
-                    className="glass-card-heavy p-8 sm:p-10 space-y-6"
-                >
-                    {/* Photo upload */}
-                    <div>
-                        <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Upload Photo *</label>
+                <motion.form initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} onSubmit={handleSubmit} className="space-y-6">
+                    {/* ── Location Picker ── */}
+                    <div className="glass-card-heavy p-6 space-y-4">
+                        <div className="flex items-center gap-2 mb-2">
+                            <MapPin size={18} className="text-emerald-400" />
+                            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">1. Pick Location</h3>
+                        </div>
+
+                        {/* Search + Detect Row */}
+                        <div className="flex gap-3">
+                            <div className="flex-1 relative">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), searchLocation())}
+                                    placeholder="Search area, city, landmark..."
+                                    className="w-full pl-10 pr-4 py-3 rounded-xl text-sm"
+                                />
+                            </div>
+                            <button type="button" onClick={searchLocation} disabled={searching}
+                                className="px-4 py-3 rounded-xl text-sm font-semibold bg-slate-800/50 text-slate-300 border border-slate-700/20 hover:border-emerald-500/20 hover:text-emerald-400 transition-all disabled:opacity-50">
+                                {searching ? '...' : 'Search'}
+                            </button>
+                            <button type="button" onClick={detectLocation} disabled={detectingLocation}
+                                className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/15 transition-all disabled:opacity-50 whitespace-nowrap">
+                                <Crosshair size={16} className={detectingLocation ? 'animate-spin' : ''} />
+                                {detectingLocation ? 'Detecting...' : 'My Location'}
+                            </button>
+                        </div>
+
+                        {/* Map */}
+                        <div className="rounded-xl overflow-hidden border border-slate-700/20 shadow-lg" style={{ height: 320 }}>
+                            <MapContainer center={[20.5937, 78.9629]} zoom={5} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+                                <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+                                <LocationPicker position={position} setPosition={handlePositionChange} />
+                                {flyTarget && <FlyTo center={flyTarget} />}
+                            </MapContainer>
+                        </div>
+
+                        {/* Selected address */}
+                        {position && (
+                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/5 border border-emerald-500/15 text-sm">
+                                <MapPin size={14} className="text-emerald-400 flex-shrink-0" />
+                                <span className="text-emerald-300 font-medium">{address || `${position[0].toFixed(4)}, ${position[1].toFixed(4)}`}</span>
+                            </motion.div>
+                        )}
+                        {!position && (
+                            <p className="text-xs text-slate-500 text-center">👆 Click on the map, search a location, or use "My Location"</p>
+                        )}
+                    </div>
+
+                    {/* ── Photo Upload ── */}
+                    <div className="glass-card-heavy p-6">
+                        <div className="flex items-center gap-2 mb-4">
+                            <Upload size={18} className="text-emerald-400" />
+                            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">2. Upload Photo</h3>
+                        </div>
                         <div
                             onClick={() => fileInputRef.current?.click()}
-                            className="border-2 border-dashed border-slate-700/30 rounded-xl p-10 text-center hover:border-emerald-500/20 transition-colors cursor-pointer bg-slate-800/20"
+                            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${photoPreview ? 'border-emerald-500/25 bg-emerald-500/3' : 'border-slate-700/30 bg-slate-800/20 hover:border-emerald-500/20'}`}
                         >
                             {photoPreview ? (
-                                <div>
-                                    <img src={photoPreview} alt="Preview" className="w-24 h-24 object-cover rounded-xl mx-auto mb-2 border border-emerald-500/20" />
-                                    <p className="text-sm text-emerald-400 font-medium">{photoName}</p>
-                                    <p className="text-xs text-slate-500 mt-1">Click to change</p>
+                                <div className="flex items-center gap-4 justify-center">
+                                    <img src={photoPreview} alt="Preview" className="w-24 h-24 object-cover rounded-xl border border-emerald-500/20" />
+                                    <div className="text-left">
+                                        <p className="text-sm text-emerald-400 font-semibold">{photoName}</p>
+                                        <p className="text-xs text-slate-500 mt-1">Click to change photo</p>
+                                    </div>
                                 </div>
                             ) : (
                                 <>
-                                    <Upload size={32} className="text-slate-500 mx-auto mb-2" />
-                                    <p className="text-sm text-slate-400">Drag & drop or click to upload</p>
-                                    <p className="text-xs text-slate-500 mt-1">Max 5MB • JPG, PNG</p>
+                                    <Upload size={36} className="text-slate-500 mx-auto mb-3" />
+                                    <p className="text-sm text-slate-400 font-medium">Click to upload a photo of the spot</p>
+                                    <p className="text-xs text-slate-500 mt-1">JPG, PNG • Max 5MB</p>
                                 </>
                             )}
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) {
-                                        setPhotoName(file.name);
-                                        const reader = new FileReader();
-                                        reader.onload = (ev) => setPhotoPreview(ev.target.result);
-                                        reader.readAsDataURL(file);
-                                    }
-                                }}
-                            />
+                            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                    setPhotoName(file.name);
+                                    const reader = new FileReader();
+                                    reader.onload = (ev) => setPhotoPreview(ev.target.result);
+                                    reader.readAsDataURL(file);
+                                }
+                            }} />
                         </div>
                     </div>
 
-                    {/* Location */}
-                    <div>
-                        <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Location *</label>
-                        <input
-                            type="text"
-                            value={form.address}
-                            onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
-                            placeholder="Enter address or area name"
-                            className="w-full px-4 py-3 rounded-xl text-sm mb-3"
-                        />
-                        <div className="flex items-center gap-4">
-                            <button
-                                type="button"
-                                onClick={detectLocation}
-                                className="flex items-center gap-2 text-xs text-emerald-400 hover:text-emerald-300 transition-colors font-medium bg-emerald-500/10 px-3 py-2 rounded-lg border border-emerald-500/15"
-                            >
-                                <MapPin size={14} /> Detect my location
-                            </button>
-                            {form.lat && form.lng && (
-                                <p className="text-xs text-emerald-400 font-medium">📍 {form.lat}, {form.lng}</p>
-                            )}
+                    {/* ── Description ── */}
+                    <div className="glass-card-heavy p-6">
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="text-emerald-400 text-lg">📝</span>
+                            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">3. Describe the Issue</h3>
                         </div>
-                        {/* Manual coordinate input */}
-                        <div className="grid grid-cols-2 gap-3 mt-3">
-                            <input type="number" step="any" value={form.lat} onChange={e => setForm(f => ({ ...f, lat: e.target.value }))} placeholder="Latitude" className="px-3 py-2 rounded-xl text-sm" />
-                            <input type="number" step="any" value={form.lng} onChange={e => setForm(f => ({ ...f, lng: e.target.value }))} placeholder="Longitude" className="px-3 py-2 rounded-xl text-sm" />
-                        </div>
+                        <textarea value={description} onChange={e => setDescription(e.target.value)}
+                            placeholder="What kind of waste? How large is the area? Any hazards?"
+                            rows={3} className="w-full px-4 py-3 rounded-xl text-sm resize-none" />
                     </div>
 
-                    {/* Description */}
-                    <div>
-                        <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Description *</label>
-                        <textarea
-                            value={form.description}
-                            onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                            placeholder="Describe the issue — what kind of waste, how much area, etc."
-                            rows={4}
-                            className="w-full px-4 py-3 rounded-xl text-sm resize-none"
-                        />
-                    </div>
-
-                    {/* Severity */}
-                    <div>
-                        <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Severity Level *</label>
+                    {/* ── Severity ── */}
+                    <div className="glass-card-heavy p-6">
+                        <div className="flex items-center gap-2 mb-4">
+                            <AlertTriangle size={18} className="text-emerald-400" />
+                            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">4. How Bad Is It?</h3>
+                        </div>
                         <div className="grid grid-cols-3 gap-3">
-                            {[
-                                { value: 'low', label: 'Low', active: 'border-green-500/30 bg-green-500/10 text-green-400' },
-                                { value: 'medium', label: 'Medium', active: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400' },
-                                { value: 'high', label: 'High', active: 'border-orange-500/30 bg-orange-500/10 text-orange-400' },
-                            ].map(s => (
-                                <button
-                                    key={s.value}
-                                    type="button"
-                                    onClick={() => setForm(f => ({ ...f, severity: s.value }))}
-                                    className={`py-3 rounded-xl text-sm font-bold border transition-all ${form.severity === s.value ? s.active : 'border-slate-700/20 bg-slate-800/30 text-slate-400 hover:border-slate-600/30'
-                                        }`}
+                            {severities.map(s => (
+                                <button key={s.value} type="button" onClick={() => setSeverity(s.value)}
+                                    className={`py-4 rounded-xl text-center border-2 transition-all ${severity === s.value
+                                        ? `${s.bg} ${s.border}` : 'border-slate-700/20 bg-slate-800/30 hover:border-slate-600/30'}`}
                                 >
-                                    {s.label}
+                                    <div className="w-4 h-4 rounded-full mx-auto mb-2" style={{ backgroundColor: s.color, boxShadow: severity === s.value ? `0 0 12px ${s.color}50` : 'none' }} />
+                                    <div className={`text-sm font-bold ${severity === s.value ? 'text-white' : 'text-slate-300'}`}>{s.label}</div>
+                                    <div className="text-[10px] text-slate-500 mt-0.5">{s.desc}</div>
                                 </button>
                             ))}
                         </div>
                     </div>
 
-                    <button
-                        type="submit"
-                        disabled={!form.description || !form.severity || !form.lat || !form.lng || isSubmitting}
-                        className="btn-primary w-full flex items-center justify-center gap-2 !py-3.5 disabled:opacity-50"
-                    >
+                    {/* Submit */}
+                    <button type="submit" disabled={!position || !description || !severity || isSubmitting}
+                        className="btn-primary w-full flex items-center justify-center gap-2 !py-4 disabled:opacity-40 text-base font-bold">
                         {isSubmitting ? (
                             <div className="w-5 h-5 border-2 border-emerald-800 border-t-emerald-400 rounded-full animate-spin" />
                         ) : (
-                            <><Send size={16} /> Submit Report</>
+                            <><Send size={18} /> Submit Report</>
                         )}
                     </button>
                 </motion.form>
