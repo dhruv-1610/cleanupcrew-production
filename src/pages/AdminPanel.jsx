@@ -19,6 +19,7 @@ export default function AdminPanel() {
     const { user, isAuthenticated, loading: authLoading, apiOnline } = useAuth();
     const [activeSection, setActiveSection] = useState('overview');
     const [spotStatuses, setSpotStatuses] = useState({});
+    const [userRoles, setUserRoles] = useState({});
     const [toast, setToast] = useState('');
     const navigate = useNavigate();
 
@@ -201,11 +202,16 @@ export default function AdminPanel() {
     };
 
     const handleRoleChange = async (userId, newRole) => {
+        const prevRole = userRoles[userId] || allUsers.find(u => (u._id || u.id) === userId)?.role;
+        setUserRoles(p => ({ ...p, [userId]: newRole }));
         try {
             await api.patch(`/api/users/${userId}/role`, { role: newRole });
             await refetchUsers();
             showToast(`Role updated to ${newRole}`);
-        } catch { showToast('Role update failed'); }
+        } catch { 
+            setUserRoles(p => ({ ...p, [userId]: prevRole }));
+            showToast('Role update failed'); 
+        }
     };
 
     return (
@@ -471,7 +477,17 @@ export default function AdminPanel() {
                                                             </div>
                                                             <div className="flex items-center gap-2 flex-shrink-0">
                                                                 {/* Status changer */}
-                                                                <select value={st} onChange={async e => { try { await api.patch(`/api/reports/${spot.id}/status`, { status: e.target.value }); setSpotStatuses(p=>({...p,[spot.id]:e.target.value})); await refetchSpots(); showToast(`Status → ${e.target.value}`); } catch(er) { showToast(er.response?.data?.error?.message || 'Failed'); } }} className="text-[10px] font-bold uppercase bg-slate-800/50 border border-slate-700/30 text-slate-300 rounded-lg px-2 py-1">
+                                                                <select value={st} onChange={async e => { 
+                                                                    const val = e.target.value;
+                                                                    setSpotStatuses(p=>({...p,[spot.id]:val})); 
+                                                                    try { 
+                                                                        await api.patch(`/api/reports/${spot.id}/status`, { status: val }); 
+                                                                        await refetchSpots(); 
+                                                                        showToast(`Status → ${val}`); 
+                                                                    } catch(er) { 
+                                                                        showToast(er.response?.data?.error?.message || 'Failed'); 
+                                                                    } 
+                                                                }} className="text-[10px] font-bold uppercase bg-slate-800/50 border border-slate-700/30 text-slate-300 rounded-lg px-2 py-1">
                                                                     <option value="reported">Reported</option><option value="verified">Verified</option><option value="drive_created">Drive Created</option><option value="cleaned">Cleaned</option><option value="rejected">Rejected</option>
                                                                 </select>
                                                                 {/* Quick verify */}
@@ -619,7 +635,7 @@ export default function AdminPanel() {
                                                 <div className="text-sm font-semibold text-slate-100">{u.profile?.name || u.name || 'Unnamed'}</div>
                                                 <div className="text-xs text-slate-400">{u.email}</div>
                                             </div>
-                                            <select value={u.role} onChange={e => handleRoleChange(u._id || u.id, e.target.value)} className="text-[10px] font-bold uppercase bg-slate-800/50 border border-slate-700/30 text-slate-300 rounded-lg px-2 py-1">
+                                            <select value={userRoles[u._id || u.id] || u.role} onChange={e => handleRoleChange(u._id || u.id, e.target.value)} className="text-[10px] font-bold uppercase bg-slate-800/50 border border-slate-700/30 text-slate-300 rounded-lg px-2 py-1">
                                                 <option value="public">Public</option>
                                                 <option value="user">User</option>
                                                 <option value="organizer">Organizer</option>
