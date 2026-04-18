@@ -1,14 +1,13 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { mockStats, mockDonations } from '../data/mockData';
 import { useApiData } from '../hooks/useApiData';
 import { api } from '../lib/api';
 import {
-    LayoutDashboard, MapPin, Users, DollarSign, Settings, Shield,
+    MapPin, Users, DollarSign, Shield,
     BarChart3, Plus, Edit, Trash2, CheckCircle2, X, QrCode,
-    Upload, Eye, AlertTriangle, Calendar, Clock, Leaf, Globe
+    Upload, Eye, AlertTriangle, Globe
 } from 'lucide-react';
 
 const fadeUp = {
@@ -31,6 +30,11 @@ export default function AdminPanel() {
     // Edit Drive modal
     const [editDrive, setEditDrive] = useState(null);
     const [editForm, setEditForm] = useState({ title: '', status: '', fundingGoal: '', date: '', roles: [] });
+
+    // Add Expense modal
+    const [showAddExpense, setShowAddExpense] = useState(false);
+    const [expenseForm, setExpenseForm] = useState({ driveId: '', category: 'equipment', amount: '', description: '' });
+    const [addingExpense, setAddingExpense] = useState(false);
     const [editing, setEditing] = useState(false);
 
     const { data: apiDrives, loading: drivesLoading, refetch: refetchDrives } = useApiData('/api/drives', [], {
@@ -51,10 +55,52 @@ export default function AdminPanel() {
     const { data: apiExpenses, refetch: refetchExpenses } = useApiData('/api/expenses', [], {
         transform: (res) => Array.isArray(res) ? res : (res.expenses || [])
     });
+    const { data: apiAttendance } = useApiData('/api/drives', [], {
+        transform: (res) => {
+            // We'll extract attendance from drives data
+            return [];
+        }
+    });
     const allDrives = apiDrives || [];
     const allSpots = apiSpots || [];
     const allUsers = apiUsers || [];
     const allExpenses = apiExpenses || [];
+
+    const handleAddExpense = async () => {
+        if (!expenseForm.driveId || !expenseForm.amount) return showToast('Select a drive and enter amount');
+        setAddingExpense(true);
+        try {
+            await api.post('/api/expenses', {
+                driveId: expenseForm.driveId,
+                category: expenseForm.category,
+                amount: Number(expenseForm.amount),
+                proofUrl: '/uploads/no-proof.png',
+            });
+            await refetchExpenses();
+            setShowAddExpense(false);
+            setExpenseForm({ driveId: '', category: 'equipment', amount: '', description: '' });
+            showToast('Expense added!');
+        } catch (e) { showToast(e.response?.data?.error?.message || 'Failed to add expense'); }
+        setAddingExpense(false);
+    };
+
+    const handleDeleteExpense = async (id) => {
+        if (!confirm('Delete this expense?')) return;
+        try {
+            await api.delete(`/api/expenses/${id}`);
+            await refetchExpenses();
+            showToast('Expense deleted');
+        } catch { showToast('Delete failed'); }
+    };
+
+    const handleDeleteUser = async (userId, name) => {
+        if (!confirm(`Remove user "${name}"?`)) return;
+        try {
+            await api.delete(`/api/users/${userId}`);
+            await refetchUsers();
+            showToast('User removed');
+        } catch { showToast('Delete failed'); }
+    };
 
     const showToast = (msg) => {
         setToast(msg);
@@ -398,48 +444,49 @@ export default function AdminPanel() {
 
                         {activeSection === 'spots' && (
                             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                                <h2 className="text-2xl font-extrabold text-slate-100 mb-6 font-[var(--font-display)]">Verify <span className="gradient-text">Spots</span></h2>
+                                <h2 className="text-2xl font-extrabold text-slate-100 mb-6 font-[var(--font-display)]">Manage <span className="gradient-text">Spots</span></h2>
+                                {/* Status summary */}
+                                <div className="grid grid-cols-4 gap-3 mb-6">
+                                    {[{l:'Reported',s:'reported',c:'text-red-400 bg-red-500/10'},{l:'Verified',s:'verified',c:'text-amber-400 bg-amber-500/10'},{l:'Drive Created',s:'drive_created',c:'text-blue-400 bg-blue-500/10'},{l:'Cleaned',s:'cleaned',c:'text-emerald-400 bg-emerald-500/10'}].map(x=>(
+                                        <div key={x.s} className="glass-card p-3 text-center"><div className={`text-lg font-bold ${x.c.split(' ')[0]}`}>{allSpots.filter(s=>s.status===x.s).length}</div><div className="text-[10px] text-slate-400 uppercase mt-0.5">{x.l}</div></div>
+                                    ))}
+                                </div>
                                 <div className="space-y-3">
-                                    {allSpots.filter(s => s.status === 'reported' || spotStatuses[s.id]).map(spot => {
-                                        const isVerified = spotStatuses[spot.id] === 'verified' || spot.status === 'verified';
-                                        const isRejected = spotStatuses[spot.id] === 'rejected' || spot.status === 'rejected';
-                                        
+                                    {allSpots.map(spot => {
+                                        const st = spotStatuses[spot.id] || spot.status;
                                         return (
-                                            <div key={spot.id} className={`glass-card p-4 transition-all duration-300 ${isVerified ? 'border-emerald-500/30 bg-emerald-500/5' : isRejected ? 'opacity-50 grayscale' : ''}`}>
+                                            <div key={spot.id} className="glass-card p-4">
                                                 <div className="flex gap-4">
                                                     <div className="w-20 h-20 rounded-xl bg-slate-800 border border-slate-700/30 overflow-hidden flex-shrink-0">
-                                                        <img src={spot.photoUrl || spot.photoUrls?.[0] || 'https://images.unsplash.com/photo-1618477461853-cf6ed80f4710?w=800&q=80'} alt="Report" className="w-full h-full object-cover" />
+                                                        <img src={spot.photoUrl || spot.photoUrls?.[0] || 'https://images.unsplash.com/photo-1618477461853-cf6ed80f4710?w=800&q=80'} alt="" className="w-full h-full object-cover" />
                                                     </div>
                                                     <div className="flex-1 min-w-0 py-1">
                                                         <div className="flex items-start justify-between mb-2">
                                                             <div>
                                                                 <div className="flex items-center gap-2 mb-1">
-                                                                    <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-full border ${spot.severity === 'high' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
-                                                                            spot.severity === 'medium' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
-                                                                                'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
-                                                                        }`}>{spot.severity} Severity</span>
-                                                                    <span className="text-xs text-slate-400">{new Date(spot.createdAt || spot.date || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                                                                    <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-full border ${spot.severity === 'high' ? 'bg-red-500/10 text-red-400 border-red-500/20' : spot.severity === 'medium' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'}`}>{spot.severity}</span>
+                                                                    <span className="text-xs text-slate-400">{new Date(spot.createdAt || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
                                                                 </div>
-                                                                <p className="text-sm text-slate-300 line-clamp-2">{spot.description || "Trash accumulation reported at this location."}</p>
+                                                                <p className="text-sm text-slate-300 line-clamp-2">{spot.description}</p>
                                                             </div>
-                                                            {isVerified ? (
-                                                                <div className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs font-bold text-emerald-400 flex items-center gap-1.5"><CheckCircle2 size={14} /> Verified</div>
-                                                            ) : isRejected ? (
-                                                                <div className="px-3 py-1 bg-slate-800/50 border border-slate-700/30 rounded-lg text-xs font-bold text-slate-400 flex items-center gap-1.5"><X size={14} /> Rejected</div>
-                                                            ) : (
-                                                                <div className="flex gap-2 flex-shrink-0">
-                                                                    <button onClick={() => handleRejectSpot(spot.id)} className="p-2 rounded-lg bg-slate-800/50 border border-slate-700/30 text-slate-400 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 transition-all" title="Reject Report"><X size={16} /></button>
-                                                                    <button onClick={() => handleApproveSpot(spot.id)} className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold hover:bg-emerald-500/20 hover:text-emerald-300 transition-all flex items-center gap-1.5"><CheckCircle2 size={14} /> Verify</button>
-                                                                </div>
-                                                            )}
+                                                            <div className="flex items-center gap-2 flex-shrink-0">
+                                                                {/* Status changer */}
+                                                                <select value={st} onChange={async e => { try { await api.patch(`/api/reports/${spot.id}/status`, { status: e.target.value }); setSpotStatuses(p=>({...p,[spot.id]:e.target.value})); await refetchSpots(); showToast(`Status → ${e.target.value}`); } catch(er) { showToast(er.response?.data?.error?.message || 'Failed'); } }} className="text-[10px] font-bold uppercase bg-slate-800/50 border border-slate-700/30 text-slate-300 rounded-lg px-2 py-1">
+                                                                    <option value="reported">Reported</option><option value="verified">Verified</option><option value="drive_created">Drive Created</option><option value="cleaned">Cleaned</option><option value="rejected">Rejected</option>
+                                                                </select>
+                                                                {/* Quick verify */}
+                                                                {st === 'reported' && <button onClick={() => handleApproveSpot(spot.id)} className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all" title="Verify"><CheckCircle2 size={14} /></button>}
+                                                                {/* Delete */}
+                                                                <button onClick={async () => { if(!confirm('Delete this report?')) return; try { await api.delete(`/api/reports/${spot.id}`); await refetchSpots(); showToast('Report deleted'); } catch { showToast('Delete failed'); } }} className="p-1.5 rounded-lg bg-slate-800/30 border border-slate-700/15 text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete"><Trash2 size={13} /></button>
+                                                            </div>
                                                         </div>
-                                                        <div className="flex items-center gap-1 text-xs text-slate-500"><MapPin size={12} /> {spot.location?.coordinates ? `${spot.location.coordinates[1].toFixed(4)}, ${spot.location.coordinates[0].toFixed(4)}` : 'Location coords unavailable'}</div>
+                                                        <div className="flex items-center gap-1 text-xs text-slate-500"><MapPin size={12} /> {spot.location?.coordinates ? `${spot.location.coordinates[1].toFixed(4)}, ${spot.location.coordinates[0].toFixed(4)}` : 'N/A'}</div>
                                                     </div>
                                                 </div>
                                             </div>
                                         );
                                     })}
-                                    {allSpots.filter(s => s.status === 'reported' && !spotStatuses[s.id]).length === 0 && <p className="text-center text-sm text-slate-400 p-8 glass-card">No pending spots to verify.</p>}
+                                    {allSpots.length === 0 && <p className="text-center text-sm text-slate-400 p-8 glass-card">No spots reported yet.</p>}
                                 </div>
                             </motion.div>
                         )}
@@ -454,23 +501,29 @@ export default function AdminPanel() {
                                     <button className="btn-primary">Start Scanner</button>
                                 </div>
                                 <div className="glass-card p-6">
-                                    <h3 className="text-sm font-bold text-slate-200 mb-4 uppercase tracking-wider">Recent Attendance Logs</h3>
-                                    <div className="space-y-2">
-                                        {[
-                                            { name: 'Arjun Mehta', drive: 'Mumbai Beach Cleanup', time: '06:12 AM', status: 'checked-in' },
-                                            { name: 'Kavya Nair', drive: 'Mumbai Beach Cleanup', time: '06:15 AM', status: 'checked-in' },
-                                            { name: 'Rohit Joshi', drive: 'Mumbai Beach Cleanup', time: '06:20 AM', status: 'checked-in' },
-                                        ].map((log, i) => (
-                                            <div key={i} className="flex items-center gap-3 p-3 bg-slate-800/30 border border-slate-700/15 rounded-xl">
-                                                <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                                                <div className="flex-1">
-                                                    <div className="text-sm text-slate-200 font-medium">{log.name}</div>
-                                                    <div className="text-xs text-slate-400">{log.drive}</div>
+                                    <h3 className="text-sm font-bold text-slate-200 mb-4 uppercase tracking-wider">Volunteer Bookings by Drive</h3>
+                                    <div className="space-y-3">
+                                        {allDrives.map(drive => {
+                                            const roles = drive.requiredRoles || [];
+                                            const totalBooked = roles.reduce((s, r) => s + (r.booked || 0), 0);
+                                            const totalCap = roles.reduce((s, r) => s + r.capacity, 0);
+                                            return (
+                                                <div key={drive.id} className="p-4 bg-slate-800/30 border border-slate-700/15 rounded-xl">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <h4 className="text-sm font-bold text-slate-200">{drive.title}</h4>
+                                                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${drive.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/30 text-slate-400'}`}>{drive.status}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <div className="flex-1 h-2 bg-slate-800/50 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${totalCap > 0 ? (totalBooked/totalCap)*100 : 0}%` }} /></div>
+                                                        <span className="text-xs text-slate-400 font-semibold">{totalBooked}/{totalCap}</span>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {roles.map((r, i) => <span key={i} className="text-[10px] px-2 py-0.5 bg-slate-700/30 text-slate-300 rounded-md">{r.role}: {r.booked||0}/{r.capacity}</span>)}
+                                                    </div>
                                                 </div>
-                                                <div className="text-xs text-slate-500">{log.time}</div>
-                                                <span className="text-[10px] font-bold text-emerald-400 uppercase">✓ {log.status}</span>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
+                                        {allDrives.length === 0 && <p className="text-center text-xs text-slate-500 py-4">No drives found.</p>}
                                     </div>
                                 </div>
                             </motion.div>
@@ -480,9 +533,43 @@ export default function AdminPanel() {
                             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
                                 <div className="flex items-center justify-between mb-6">
                                     <h2 className="text-2xl font-extrabold text-slate-100 font-[var(--font-display)]">Manage <span className="gradient-text">Expenses</span></h2>
-                                    <button onClick={() => showToast('Upload expenses from Drive Detail page → Expenses tab')} className="btn-primary flex items-center gap-2 !py-2 !px-4 !text-sm">
-                                        <Upload size={16} /> Upload Expense
+                                    <button onClick={() => setShowAddExpense(true)} className="btn-primary flex items-center gap-2 !py-2 !px-4 !text-sm">
+                                        <Plus size={16} /> Add Expense
                                     </button>
+                                </div>
+                                {/* Add Expense Modal */}
+                                {showAddExpense && (
+                                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowAddExpense(false)}>
+                                        <div className="glass-card-heavy p-6 w-full max-w-lg space-y-4" onClick={e => e.stopPropagation()}>
+                                            <h3 className="text-lg font-bold text-slate-100">Add New Expense</h3>
+                                            <div><label className="block text-xs text-slate-400 uppercase mb-1">Drive *</label>
+                                                <select value={expenseForm.driveId} onChange={e => setExpenseForm(p => ({ ...p, driveId: e.target.value }))} className="w-full px-3 py-2 rounded-lg text-sm bg-slate-800/50 border border-slate-700/30 text-slate-100">
+                                                    <option value="">Select drive...</option>
+                                                    {allDrives.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div><label className="block text-xs text-slate-400 uppercase mb-1">Category *</label>
+                                                    <select value={expenseForm.category} onChange={e => setExpenseForm(p => ({ ...p, category: e.target.value }))} className="w-full px-3 py-2 rounded-lg text-sm bg-slate-800/50 border border-slate-700/30 text-slate-100">
+                                                        <option value="equipment">Equipment</option><option value="transport">Transport</option><option value="refreshments">Refreshments</option><option value="misc">Misc</option>
+                                                    </select>
+                                                </div>
+                                                <div><label className="block text-xs text-slate-400 uppercase mb-1">Amount (₹) *</label>
+                                                    <input type="number" value={expenseForm.amount} onChange={e => setExpenseForm(p => ({ ...p, amount: e.target.value }))} placeholder="5000" className="w-full px-3 py-2 rounded-lg text-sm bg-slate-800/50 border border-slate-700/30 text-slate-100" />
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 pt-2">
+                                                <button onClick={handleAddExpense} disabled={addingExpense} className="btn-primary flex-1 !py-2">{addingExpense ? 'Adding...' : 'Add Expense'}</button>
+                                                <button onClick={() => setShowAddExpense(false)} className="px-4 py-2 rounded-xl text-sm text-slate-400 bg-slate-800/30 border border-slate-700/15">Cancel</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                {/* Summary cards */}
+                                <div className="grid grid-cols-3 gap-4 mb-6">
+                                    <div className="glass-card p-4 text-center"><div className="text-xl font-bold text-slate-100">₹{(allExpenses.reduce((s,e) => s + (e.amount||0), 0)).toLocaleString()}</div><div className="text-[10px] text-slate-400 uppercase mt-1">Total Spent</div></div>
+                                    <div className="glass-card p-4 text-center"><div className="text-xl font-bold text-emerald-400">{allExpenses.filter(e => e.isVerified).length}</div><div className="text-[10px] text-slate-400 uppercase mt-1">Verified</div></div>
+                                    <div className="glass-card p-4 text-center"><div className="text-xl font-bold text-yellow-400">{allExpenses.filter(e => !e.isVerified).length}</div><div className="text-[10px] text-slate-400 uppercase mt-1">Pending</div></div>
                                 </div>
                                 <div className="overflow-x-auto glass-card p-4">
                                     <table className="w-full text-sm">
@@ -492,31 +579,36 @@ export default function AdminPanel() {
                                                 <th className="pb-3 pr-4">Drive</th>
                                                 <th className="pb-3 pr-4 text-right">Amount</th>
                                                 <th className="pb-3 pr-4">Date</th>
-                                                <th className="pb-3 text-center">Verified</th>
+                                                <th className="pb-3 pr-4 text-center">Status</th>
+                                                <th className="pb-3 text-center">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-700/10">
                                             {allExpenses.map((exp, i) => (
                                                 <tr key={exp._id || exp.id || i} className="text-slate-400 hover:text-slate-200 hover:bg-emerald-500/3 transition-colors">
-                                                    <td className="py-3 pr-4 text-sm font-medium text-slate-200">{exp.category || '-'}</td>
-                                                    <td className="py-3 pr-4 text-xs">{exp.driveId?.toString?.()?.slice(-6) || exp.description || '-'}</td>
+                                                    <td className="py-3 pr-4 text-sm font-medium text-slate-200 capitalize">{exp.category || '-'}</td>
+                                                    <td className="py-3 pr-4 text-xs">{exp.driveId?.title || exp.driveId?.toString?.()?.slice(-6) || '-'}</td>
                                                     <td className="py-3 pr-4 text-right font-semibold text-slate-200">₹{(exp.amount || 0).toLocaleString()}</td>
-                                                    <td className="py-3 pr-4 text-xs">{new Date(exp.createdAt || exp.date || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
-                                                    <td className="py-3 text-center">
-                                                        {exp.isVerified ? <CheckCircle2 size={14} className="text-emerald-400 mx-auto" /> : <button onClick={async () => { try { await api.patch(`/api/expenses/${exp._id || exp.id}/verify`); refetchExpenses(); showToast('Expense verified'); } catch { showToast('Verify failed'); } }} className="text-[10px] text-yellow-400 hover:text-emerald-400 cursor-pointer">Verify</button>}
+                                                    <td className="py-3 pr-4 text-xs">{new Date(exp.createdAt || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
+                                                    <td className="py-3 pr-4 text-center">
+                                                        {exp.isVerified ? <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">✓ Verified</span> : <button onClick={async () => { try { await api.patch(`/api/expenses/${exp._id || exp.id}/verify`); refetchExpenses(); showToast('Verified'); } catch { showToast('Failed'); } }} className="text-[10px] font-bold text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded-md hover:bg-yellow-500/20 transition-colors cursor-pointer">Verify</button>}
                                                     </td>
+                                                    <td className="py-3 text-center"><button onClick={() => handleDeleteExpense(exp._id || exp.id)} className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all"><Trash2 size={13} /></button></td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
-                                    {allExpenses.length === 0 && <p className="text-center text-xs text-slate-500 mt-4">No expenses found.</p>}
+                                    {allExpenses.length === 0 && <p className="text-center text-xs text-slate-500 mt-4 py-4">No expenses yet. Click "Add Expense" to create one.</p>}
                                 </div>
                             </motion.div>
                         )}
 
                         {activeSection === 'users' && (
                             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                                <h2 className="text-2xl font-extrabold text-slate-100 mb-6 font-[var(--font-display)]">Manage <span className="gradient-text">Users</span></h2>
+                                <div className="flex items-center justify-between mb-6">
+                                    <h2 className="text-2xl font-extrabold text-slate-100 font-[var(--font-display)]">Manage <span className="gradient-text">Users</span></h2>
+                                    <span className="text-sm text-slate-400">{allUsers.length} total users</span>
+                                </div>
                                 <div className="space-y-3">
                                     {allUsers.length > 0 ? allUsers.map(u => (
                                         <div key={u._id || u.id} className="glass-card p-4 flex items-center gap-4">
@@ -536,9 +628,10 @@ export default function AdminPanel() {
                                             <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-full border ${u.emailVerified ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/15' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/15'}`}>
                                                 {u.emailVerified ? 'Verified' : 'Unverified'}
                                             </span>
+                                            <button onClick={() => handleDeleteUser(u._id || u.id, u.profile?.name || u.name || u.email)} className="p-2 rounded-lg bg-slate-800/30 border border-slate-700/15 text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete User"><Trash2 size={14} /></button>
                                         </div>
                                     )) : (
-                                        <div className="glass-card p-10 text-center text-slate-400 text-sm">No users found. Users will appear here after registration.</div>
+                                        <div className="glass-card p-10 text-center text-slate-400 text-sm">No users found.</div>
                                     )}
                                 </div>
                             </motion.div>

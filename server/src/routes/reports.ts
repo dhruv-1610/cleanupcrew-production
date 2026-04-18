@@ -201,4 +201,24 @@ router.patch(
   },
 );
 
+// ── DELETE /api/reports/:id — Admin deletes a report ───────────────────────
+router.delete(
+  '/:id',
+  authenticate,
+  authorize(['admin']),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const reportId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const { Report } = await import('../models/report.model');
+      const deleted = await Report.findByIdAndDelete(reportId);
+      if (!deleted) {
+        throw new BadRequestError('Report not found');
+      }
+      res.json({ message: 'Report deleted' });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 export default router;

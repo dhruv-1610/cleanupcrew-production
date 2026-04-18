@@ -24,7 +24,7 @@ function LocationPicker({ position, setPosition }) {
 
 function FlyTo({ center }) {
     const map = useMap();
-    useEffect(() => { if (center) map.flyTo(center, 16, { duration: 1.2 }); }, [center]);
+    useEffect(() => { if (center) map.flyTo(center, 15, { duration: 1.2 }); }, [center]);
     return null;
 }
 
@@ -199,8 +199,8 @@ export default function ReportSpot() {
 
                         {/* Map */}
                         <div className="rounded-xl overflow-hidden border border-slate-700/20 shadow-lg" style={{ height: 320 }}>
-                            <MapContainer center={[20.5937, 78.9629]} zoom={5} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-                                <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+                            <MapContainer center={[20.5937, 78.9629]} zoom={5} maxZoom={18} style={{ height: '100%', width: '100%', background: '#070f1e' }} zoomControl={false}>
+                                <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" maxZoom={18} maxNativeZoom={18} />
                                 <LocationPicker position={position} setPosition={handlePositionChange} />
                                 {flyTarget && <FlyTo center={flyTarget} />}
                             </MapContainer>

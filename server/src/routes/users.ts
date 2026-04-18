@@ -105,6 +105,26 @@ router.patch(
   },
 );
 
+/** DELETE /api/users/:userId — Admin deletes a user. */
+router.delete(
+  '/:userId',
+  authenticate,
+  authorize(['admin']),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+      if (userId === req.user!.userId) {
+        throw new BadRequestError('Cannot delete your own account');
+      }
+      const deleted = await User.findByIdAndDelete(userId);
+      if (!deleted) throw new BadRequestError('User not found');
+      res.json({ message: 'User deleted' });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 /** GET /api/users/:userId/badges — Badge levels for a user. */
 router.get('/:userId/badges', async (req: Request, res: Response, next: NextFunction) => {
   try {

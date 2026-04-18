@@ -254,12 +254,15 @@ export default function MapPage() {
                         <MapContainer
                             center={mapCenter}
                             zoom={mapZoom}
+                            maxZoom={18}
                             style={{ height: '100%', width: '100%', background: '#070f1e' }}
                             zoomControl={false}
                         >
                             <TileLayer
                                 url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
                                 attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+                                maxZoom={18}
+                                maxNativeZoom={18}
                             />
                             <FlyToLocation center={mapCenter} zoom={mapZoom} />
 
