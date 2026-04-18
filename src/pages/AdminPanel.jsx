@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { mockDrives, mockSpots, mockStats, mockDonations, mockExpenses } from '../data/mockData';
+import { mockStats, mockDonations } from '../data/mockData';
 import { useApiData } from '../hooks/useApiData';
 import { api } from '../lib/api';
 import {
@@ -33,13 +33,13 @@ export default function AdminPanel() {
     const [editForm, setEditForm] = useState({ title: '', status: '', fundingGoal: '', date: '', roles: [] });
     const [editing, setEditing] = useState(false);
 
-    const { data: apiDrives, refetch: refetchDrives } = useApiData('/api/drives', mockDrives, {
+    const { data: apiDrives, loading: drivesLoading, refetch: refetchDrives } = useApiData('/api/drives', [], {
         transform: (res) => {
             const arr = Array.isArray(res) ? res : (res.drives || []);
             return arr.map(d => ({ ...d, id: d._id || d.id, severity: d.severity || 'medium', status: d.status === 'planned' ? 'upcoming' : d.status }));
         }
     });
-    const { data: apiSpots, refetch: refetchSpots } = useApiData('/api/reports', mockSpots, {
+    const { data: apiSpots, loading: spotsLoading, refetch: refetchSpots } = useApiData('/api/reports', [], {
         transform: (res) => {
             const arr = Array.isArray(res) ? res : (res.reports || []);
             return arr.map(r => ({ ...r, id: r._id || r.id, severity: r.severity || 'medium', status: r.status || 'reported' }));
@@ -51,8 +51,8 @@ export default function AdminPanel() {
     const { data: apiExpenses, refetch: refetchExpenses } = useApiData('/api/expenses', [], {
         transform: (res) => Array.isArray(res) ? res : (res.expenses || [])
     });
-    const allDrives = apiDrives?.length > 0 ? apiDrives : mockDrives;
-    const allSpots = apiSpots?.length > 0 ? apiSpots : mockSpots;
+    const allDrives = apiDrives || [];
+    const allSpots = apiSpots || [];
     const allUsers = apiUsers || [];
     const allExpenses = apiExpenses || [];
 
@@ -496,7 +496,7 @@ export default function AdminPanel() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-700/10">
-                                            {(allExpenses.length > 0 ? allExpenses : mockExpenses).map((exp, i) => (
+                                            {allExpenses.map((exp, i) => (
                                                 <tr key={exp._id || exp.id || i} className="text-slate-400 hover:text-slate-200 hover:bg-emerald-500/3 transition-colors">
                                                     <td className="py-3 pr-4 text-sm font-medium text-slate-200">{exp.category || '-'}</td>
                                                     <td className="py-3 pr-4 text-xs">{exp.driveId?.toString?.()?.slice(-6) || exp.description || '-'}</td>
@@ -509,7 +509,7 @@ export default function AdminPanel() {
                                             ))}
                                         </tbody>
                                     </table>
-                                    {allExpenses.length === 0 && <p className="text-center text-xs text-slate-500 mt-4">No expenses from API. Showing mock data.</p>}
+                                    {allExpenses.length === 0 && <p className="text-center text-xs text-slate-500 mt-4">No expenses found.</p>}
                                 </div>
                             </motion.div>
                         )}
