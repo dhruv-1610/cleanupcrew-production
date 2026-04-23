@@ -1,8 +1,10 @@
-import mongoose from 'mongoose';
 import { Drive, IDrive, IRequiredRole } from '../models/drive.model';
 import { Report } from '../models/report.model';
 import { ActivityLog } from '../models/activityLog.model';
+import { Impact } from '../models/impact.model';
 import { BadRequestError, ConflictError, NotFoundError } from '../utils/errors';
+import { toObjectId } from '../middleware/validateObjectId';
+import { enrichDriveWithAddress } from '../utils/geocode';
 
 // ── Create drive ───────────────────────────────────────────────────────────
 
@@ -28,7 +30,7 @@ export interface CreateDriveInput {
 export async function createDrive(input: CreateDriveInput): Promise<IDrive> {
   const { reportId, title, date, fundingGoal, requiredRoles, createdBy } = input;
 
-  const reportObjectId = new mongoose.Types.ObjectId(reportId);
+  const reportObjectId = toObjectId(reportId, 'reportId');
 
   const report = await Report.findById(reportObjectId);
   if (!report) {
@@ -81,12 +83,15 @@ export async function createDrive(input: CreateDriveInput): Promise<IDrive> {
 
 // ── Get drive by id ────────────────────────────────────────────────────────
 
-export async function getDriveById(driveId: string): Promise<IDrive> {
-  const drive = await Drive.findById(driveId);
+export async function getDriveById(driveId: string) {
+  const oid = toObjectId(driveId, 'driveId');
+  const drive = await Drive.findById(oid).lean();
   if (!drive) {
     throw new NotFoundError('Drive not found');
   }
-  return drive;
+  const impact = await Impact.findOne({ driveId: drive._id }).lean();
+  const enriched = await enrichDriveWithAddress(drive);
+  return { ...enriched, impactSummary: impact };
 }
 
 // ── Get active drives ──────────────────────────────────────────────────────
@@ -104,10 +109,24 @@ export async function getActiveDrives(): Promise<IDrive[]> {
  * List drives with optional status filter.
  * @param statuses - Optional array of statuses to include. Default: planned, active, completed.
  */
-export async function listDrives(statuses?: string[]): Promise<IDrive[]> {
+export async function listDrives(statuses?: string[]) {
   const filter =
     statuses && statuses.length > 0
       ? { status: { $in: statuses } }
       : { status: { $in: ['planned', 'active', 'completed'] } };
-  return Drive.find(filter).sort({ date: 1 }).lean();
+  const drives = await Drive.find(filter).sort({ date: 1 }).lean();
+
+  const driveIds = drives.map((d) => d._id);
+  const impacts = await Impact.find({ driveId: { $in: driveIds } }).lean();
+  const impactMap = new Map(impacts.map((i) => [i.driveId.toString(), i]));
+
+  return Promise.all(
+    drives.map(async (d) => {
+      const enriched = await enrichDriveWithAddress(d);
+      return {
+        ...enriched,
+        impactSummary: impactMap.get(d._id.toString()),
+      };
+    }),
+  );
 }

@@ -19,7 +19,12 @@ export async function getDonorLeaderboard(period: LeaderboardPeriod) {
 
   const donors = await Donation.aggregate([
     { $match: matchStage },
-    { $group: { _id: '$userId', totalAmount: { $sum: '$amount' } } },
+    { $group: { 
+        _id: '$userId', 
+        totalAmount: { $sum: '$amount' },
+        uniqueDrives: { $addToSet: '$driveId' }
+      } 
+    },
     { $sort: { totalAmount: -1 } },
     {
       $lookup: {
@@ -34,6 +39,7 @@ export async function getDonorLeaderboard(period: LeaderboardPeriod) {
     {
       $project: {
         totalAmount: 1,
+        driveCount: { $size: '$uniqueDrives' },
         user: {
           _id: '$userDoc._id',
           profile: '$userDoc.profile',

@@ -20,11 +20,24 @@ router.patch(
         throw new BadRequestError('User not found');
       }
 
-      const { name, email } = req.body as { name?: string; email?: string };
+      const { name, email, phone, emergencyContact, medicalNotes } = req.body as any;
 
       if (name && typeof name === 'string') {
         user.profile.name = name.trim();
       }
+      if (phone && typeof phone === 'string') {
+        user.profile.phone = phone.trim();
+      }
+      if (emergencyContact && typeof emergencyContact === 'object') {
+        user.profile.emergencyContact = {
+          name: emergencyContact.name || '',
+          phone: emergencyContact.phone || ''
+        };
+      }
+      if (medicalNotes !== undefined) {
+        user.profile.medicalNotes = String(medicalNotes).trim();
+      }
+      
       if (email && typeof email === 'string') {
         // Check for duplicate email
         const existing = await User.findOne({

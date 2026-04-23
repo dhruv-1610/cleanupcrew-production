@@ -16,6 +16,11 @@ export interface IUser extends Document {
     name: string;
     phone?: string;
     avatar?: string;
+    emergencyContact?: {
+      name: string;
+      phone: string;
+    };
+    medicalNotes?: string;
   };
   stats: {
     volunteerHours: number;
@@ -62,6 +67,11 @@ const userSchema = new Schema<IUser>(
       },
       phone: { type: String, trim: true },
       avatar: { type: String },
+      emergencyContact: {
+        name: { type: String, trim: true },
+        phone: { type: String, trim: true },
+      },
+      medicalNotes: { type: String, trim: true },
     },
     stats: {
       volunteerHours: { type: Number, default: 0, min: [0, 'Volunteer hours cannot be negative'] },

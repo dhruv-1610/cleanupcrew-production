@@ -1,5 +1,4 @@
 import { motion } from 'framer-motion';
-import { mockStats, mockDrives, mockExpenses, mockDonations } from '../data/mockData';
 import { useApiData } from '../hooks/useApiData';
 import { Eye, DollarSign, Users, Leaf, Shield, CheckCircle2, FileText, Camera, BarChart3, Globe } from 'lucide-react';
 
@@ -9,20 +8,22 @@ const fadeUp = {
 };
 
 export default function Transparency() {
-    const { data: apiData } = useApiData('/api/transparency', null);
+    const { data: apiData } = useApiData('/api/transparency', null, {
+        pollInterval: 30000, // Refresh every 30s
+    });
 
-    const stats = apiData?.stats?.totalDrives ? apiData.stats : mockStats;
-    const donations = apiData?.donations?.length > 0 ? apiData.donations : mockDonations;
-    const expenses = apiData?.expenses?.length > 0 ? apiData.expenses : mockExpenses;
-    const drives = apiData?.drives?.length > 0 ? apiData.drives : mockDrives;
-
-    const completedDrives = drives.filter(d => d.status === 'completed');
+    // Only use real API data, no mock fallbacks
+    const stats = apiData?.stats || { totalFundsRaised: 0, totalWasteKg: 0, totalVolunteers: 0, completedDrives: 0 };
+    const donations = apiData?.donations || [];
+    const expenses = apiData?.expenses || [];
+    const drives = apiData?.drives || [];
     const totalDonations = donations.reduce((s, d) => s + d.amount, 0);
     const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
 
     // Expense by category
     const expenseByCategory = expenses.reduce((acc, e) => {
-        acc[e.category] = (acc[e.category] || 0) + e.amount;
+        const cat = (e.category || 'Misc').charAt(0).toUpperCase() + (e.category || 'misc').slice(1);
+        acc[cat] = (acc[cat] || 0) + e.amount;
         return acc;
     }, {});
 
@@ -34,8 +35,20 @@ export default function Transparency() {
     };
 
     return (
-        <div className="min-h-screen pt-32 pb-24">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="min-h-screen pt-32 pb-24 relative">
+            {/* Fixed Background Video */}
+            <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+                <video
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    className="w-full h-full object-cover opacity-20"
+                >
+                    <source src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260325_094440_a3592600-bd1e-49e5-9bce-a73662061d83.mp4" type="video/mp4" />
+                </video>
+            </div>
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
                 {/* Header */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-16">
                     
@@ -50,7 +63,7 @@ export default function Transparency() {
                     </p>
                 </motion.div>
 
-                {/* Overview Stats */}
+                {/* Overview Stats — USING stats variable (API data with mock fallback) */}
                 <motion.div
                     initial="hidden"
                     animate="visible"
@@ -58,10 +71,10 @@ export default function Transparency() {
                     className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-16"
                 >
                     {[
-                        { icon: DollarSign, label: 'Total Funds', value: `₹${(mockStats.totalFundsRaised / 100000).toFixed(1)}L` },
-                        { icon: Leaf, label: 'Waste Cleared', value: `${(mockStats.totalWasteKg / 1000).toFixed(1)}T` },
-                        { icon: Users, label: 'Volunteers', value: mockStats.totalVolunteers.toLocaleString() },
-                        { icon: Globe, label: 'Events Done', value: mockStats.completedDrives },
+                        { icon: DollarSign, label: 'Total Funds', value: `₹${(((stats.totalFundsRaised || 0) / 100) / 100000).toFixed(1)}L` },
+                        { icon: Leaf, label: 'Waste Cleared', value: `${((stats.totalWasteKg || 0) / 1000).toFixed(1)}T` },
+                        { icon: Users, label: 'Volunteers', value: (stats.totalVolunteers || 0).toLocaleString() },
+                        { icon: Globe, label: 'Events Done', value: stats.completedDrives || 0 },
                     ].map(({ icon: Icon, label, value }) => (
                         <motion.div key={label} variants={fadeUp} className="glass-card p-6 flex flex-col items-center justify-center text-center group">
                             <div className="w-12 h-12 mb-4 rounded-xl bg-gradient-to-br from-emerald-500/15 to-cyan-500/15 border border-emerald-500/15 flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -83,15 +96,15 @@ export default function Transparency() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-10">
                         <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-6 text-center">
                             <div className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-2">Total Donated</div>
-                            <div className="text-3xl font-extrabold text-emerald-400 font-[var(--font-display)]">₹{totalDonations.toLocaleString()}</div>
+                            <div className="text-3xl font-extrabold text-emerald-400 font-[var(--font-display)]">₹{(totalDonations / 100).toLocaleString()}</div>
                         </div>
                         <div className="bg-red-500/3 border border-red-500/8 rounded-xl p-6 text-center">
                             <div className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-2">Total Spent</div>
-                            <div className="text-3xl font-extrabold text-red-400 font-[var(--font-display)]">₹{totalExpenses.toLocaleString()}</div>
+                            <div className="text-3xl font-extrabold text-red-400 font-[var(--font-display)]">₹{(totalExpenses / 100).toLocaleString()}</div>
                         </div>
                         <div className="bg-cyan-500/5 border border-cyan-500/10 rounded-xl p-6 text-center">
                             <div className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-2">Remaining Balance</div>
-                            <div className="text-3xl font-extrabold text-cyan-400 font-[var(--font-display)]">₹{(totalDonations - totalExpenses).toLocaleString()}</div>
+                            <div className="text-3xl font-extrabold text-cyan-400 font-[var(--font-display)]">₹{((totalDonations - totalExpenses) / 100).toLocaleString()}</div>
                         </div>
                     </div>
 
@@ -99,13 +112,13 @@ export default function Transparency() {
                     <h3 className="text-lg font-bold text-slate-100 mb-6 font-[var(--font-display)]">Expense Breakdown by Category</h3>
                     <div className="space-y-5">
                         {Object.entries(expenseByCategory).map(([cat, amount]) => {
-                            const pct = (amount / totalExpenses) * 100;
+                            const pct = totalExpenses > 0 ? (amount / totalExpenses) * 100 : 0;
                             const colors = categoryColors[cat] || categoryColors.Misc;
                             return (
                                 <div key={cat}>
                                     <div className="flex justify-between text-sm font-medium text-slate-300 mb-2">
                                         <span>{cat}</span>
-                                        <span className={colors.text}>₹{amount.toLocaleString()} ({pct.toFixed(0)}%)</span>
+                                        <span className={colors.text}>₹{(amount / 100).toLocaleString()} ({pct.toFixed(0)}%)</span>
                                     </div>
                                     <div className="h-2.5 bg-slate-800/50 border border-slate-700/15 rounded-full overflow-hidden">
                                         <motion.div
@@ -122,7 +135,7 @@ export default function Transparency() {
                     </div>
                 </motion.div>
 
-                {/* All Verified Expenses Table */}
+                {/* All Verified Expenses Table — USING expenses variable (API with mock fallback) */}
                 <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="glass-card p-6 md:p-8">
                     <div className="flex items-center gap-3 mb-8 border-b border-slate-700/20 pb-4">
                         <FileText size={28} className="text-emerald-400" />
@@ -134,34 +147,39 @@ export default function Transparency() {
                             <thead className="bg-slate-800/50">
                                 <tr>
                                     <th className="p-4 font-semibold uppercase text-xs text-slate-400 border-b border-slate-700/15">Category</th>
-                                    <th className="p-4 font-semibold uppercase text-xs text-slate-400 border-b border-slate-700/15">Description</th>
+                                    <th className="p-4 font-semibold uppercase text-xs text-slate-400 border-b border-slate-700/15">Date</th>
                                     <th className="p-4 font-semibold uppercase text-xs text-slate-400 border-b border-slate-700/15">Drive</th>
                                     <th className="p-4 font-semibold uppercase text-xs text-slate-400 border-b border-slate-700/15 text-right">Amount</th>
-                                    <th className="p-4 font-semibold uppercase text-xs text-slate-400 border-b border-slate-700/15 text-center">Receipt</th>
+                                    <th className="p-4 font-semibold uppercase text-xs text-slate-400 border-b border-slate-700/15 text-center">Status</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {mockExpenses.map((exp, idx) => {
-                                    const drive = mockDrives.find(d => d.id === exp.driveId);
-                                    const colors = categoryColors[exp.category] || categoryColors.Misc;
+                                {expenses.map((exp, idx) => {
+                                    // Find drive title from the drives variable (API data)
+                                    const drive = drives.find(d => (d.id || d._id) === (exp.driveId || ''));
+                                    const cat = (exp.category || 'Misc').charAt(0).toUpperCase() + (exp.category || 'misc').slice(1);
+                                    const colors = categoryColors[cat] || categoryColors.Misc;
                                     return (
-                                        <tr key={exp.id} className={`${idx !== mockExpenses.length - 1 ? 'border-b border-slate-700/8' : ''} hover:bg-emerald-500/3 transition-colors`}>
+                                        <tr key={exp.id || idx} className={`${idx !== expenses.length - 1 ? 'border-b border-slate-700/8' : ''} hover:bg-emerald-500/3 transition-colors`}>
                                             <td className="p-4">
                                                 <span className={`px-3 py-1 text-[10px] uppercase font-semibold rounded-lg border ${colors.bg} ${colors.text} ${colors.border}`}>
-                                                    {exp.category}
+                                                    {cat}
                                                 </span>
                                             </td>
-                                            <td className="p-4 text-sm text-slate-300">{exp.description}</td>
+                                            <td className="p-4 text-sm text-slate-300">{new Date(exp.createdAt || exp.date || new Date().toISOString()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                                             <td className="p-4 text-xs text-slate-400 max-w-[200px] truncate">{drive?.title || 'Unknown'}</td>
-                                            <td className="p-4 text-right text-sm font-bold text-slate-100">₹{exp.amount.toLocaleString()}</td>
+                                            <td className="p-4 text-right text-sm font-bold text-slate-100">₹{((exp.amount || 0) / 100).toLocaleString()}</td>
                                             <td className="p-4 text-center">
-                                                {exp.receipt ? <CheckCircle2 size={20} className="text-emerald-400 mx-auto" /> : <span className="text-slate-600">-</span>}
+                                                {(exp.isVerified || exp.receipt) ? <CheckCircle2 size={20} className="text-emerald-400 mx-auto" /> : <span className="text-slate-600">-</span>}
                                             </td>
                                         </tr>
                                     );
                                 })}
                             </tbody>
                         </table>
+                        {expenses.length === 0 && (
+                            <p className="text-center text-sm text-slate-400 py-8">No expenses recorded yet.</p>
+                        )}
                     </div>
                 </motion.div>
             </div>

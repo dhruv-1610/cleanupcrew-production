@@ -1,11 +1,11 @@
 import Stripe from 'stripe';
-import mongoose from 'mongoose';
 import { Drive } from '../models/drive.model';
 import { Donation } from '../models/donation.model';
 import { User } from '../models/user.model';
 import { ActivityLog } from '../models/activityLog.model';
 import { DONATION_BLOCKED_DRIVE_STATUSES } from '../models/donation.model';
 import { BadRequestError, NotFoundError } from '../utils/errors';
+import { toObjectId } from '../middleware/validateObjectId';
 import { env } from '../config/env';
 
 // ── Create PaymentIntent and donation record ────────────────────────────────
@@ -31,8 +31,8 @@ export async function createDonation(input: CreateDonationInput): Promise<Create
     throw new BadRequestError('Payment system is not configured');
   }
 
-  const driveObjectId = new mongoose.Types.ObjectId(driveId);
-  const userObjectId = new mongoose.Types.ObjectId(userId);
+  const driveObjectId = toObjectId(driveId, 'driveId');
+  const userObjectId = toObjectId(userId, 'userId');
 
   const drive = await Drive.findById(driveObjectId);
   if (!drive) {

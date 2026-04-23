@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api, setTokens, clearTokens } from '../lib/api';
-import { mockUser } from '../data/mockData';
 
 const AuthContext = createContext(null);
 
@@ -23,19 +22,11 @@ export function AuthProvider({ children }) {
                     setLoading(false);
                     return;
                 } catch {
-                    // Token expired or API down — try mock fallback
+                    // Token expired or API down
+                    clearTokens();
                 }
             }
 
-            // Fallback: check localStorage mock user
-            const saved = localStorage.getItem('cleanupcrew_user');
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    setUser(parsed);
-                    setIsAuthenticated(true);
-                } catch { /* ignore */ }
-            }
             setLoading(false);
         }
         restoreSession();
@@ -57,15 +48,6 @@ export function AuthProvider({ children }) {
             localStorage.setItem('cleanupcrew_user', JSON.stringify(u));
             return { success: true };
         } catch (err) {
-            // If API is unreachable, use mock login
-            if (!err.response || err.code === 'ERR_NETWORK') {
-                const loggedUser = { ...mockUser, email };
-                setUser(loggedUser);
-                setIsAuthenticated(true);
-                setApiOnline(false);
-                localStorage.setItem('cleanupcrew_user', JSON.stringify(loggedUser));
-                return { success: true };
-            }
             return { success: false, error: err.response?.data?.error?.message || 'Invalid credentials' };
         }
     }, []);
@@ -79,29 +61,6 @@ export function AuthProvider({ children }) {
             // DO NOT auto-login. User must verify email.
             return { success: true, message: data.message || 'Registration successful. Please check your email to verify your account.' };
         } catch (err) {
-            // If API is unreachable, use mock register
-            if (!err.response || err.code === 'ERR_NETWORK') {
-                const newUser = {
-                    ...mockUser,
-                    id: 'user-' + Date.now(),
-                    name,
-                    email,
-                    role: role || 'volunteer',
-                    joinedDate: new Date().toISOString().split('T')[0],
-                    drives: [],
-                    donations: [],
-                    badges: ['badge-001'],
-                    points: 0,
-                    rank: 100,
-                    hoursVolunteered: 0,
-                    wasteCollected: 0,
-                };
-                setUser(newUser);
-                setIsAuthenticated(true);
-                setApiOnline(false);
-                localStorage.setItem('cleanupcrew_user', JSON.stringify(newUser));
-                return { success: true };
-            }
             return { success: false, error: err.response?.data?.error?.message || 'Registration failed' };
         }
     }, []);

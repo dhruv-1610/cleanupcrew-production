@@ -12,11 +12,11 @@ const fadeUp = {
 
 // Stock images for drives that don't have a report photo
 const stockImages = [
-    'https://images.unsplash.com/photo-1618477461853-cf6ed80f4710?w=600&q=80',
-    'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?w=600&q=80',
-    'https://images.unsplash.com/photo-1605600659908-0ef719419d41?w=600&q=80',
-    'https://images.unsplash.com/photo-1530587191325-3db32d826c18?w=600&q=80',
-    'https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=600&q=80',
+    '/images/cleanup_park_1776975755888.png',
+    '/images/cleanup_beach_1776975771831.png',
+    '/images/cleanup_urban_1776975789616.png',
+    '/images/cleanup_river_1776975803886.png',
+    '/images/cleanup_close_1776975821849.png',
 ];
 
 export default function Drives() {
@@ -26,12 +26,13 @@ export default function Drives() {
 
     // Fetch drives
     const { data: drives, loading } = useApiData('/api/drives', [], {
+        pollInterval: 15000, // Poll every 15s for real-time updates
         transform: (res) => {
             const arr = Array.isArray(res) ? res : (res.drives || []);
             return arr.map(d => ({
                 ...d,
                 id: d._id || d.id,
-                location: d.location?.address ? d.location : { address: 'India', lat: 0, lng: 0, ...d.location },
+                location: { address: d.locationAddress || 'India', ...d.location },
                 roles: d.roles || (d.requiredRoles ? Object.fromEntries(
                     d.requiredRoles.map(r => [r.role, { max: r.capacity, filled: r.booked || 0 }])
                 ) : {}),
@@ -66,7 +67,7 @@ export default function Drives() {
     const allDrives = drives || [];
 
     const filtered = allDrives.filter(d => {
-        const matchSearch = d.title?.toLowerCase().includes(search.toLowerCase()) || d.location?.address?.toLowerCase().includes(search.toLowerCase());
+        const matchSearch = d.title?.toLowerCase().includes(search.toLowerCase()) || d.locationAddress?.toLowerCase().includes(search.toLowerCase()) || d.location?.address?.toLowerCase().includes(search.toLowerCase());
         const matchStatus = statusFilter === 'all' || d.status === statusFilter;
         const matchSeverity = severityFilter === 'all' || d.severity === severityFilter;
         return matchSearch && matchStatus && matchSeverity;
@@ -84,10 +85,12 @@ export default function Drives() {
 
     // Get location label from GeoJSON coordinates
     const getLocationLabel = (drive) => {
+        if (drive.locationAddress && drive.locationAddress !== 'India') {
+            return drive.locationAddress.split(',')[0];
+        }
         if (drive.location?.address && drive.location.address !== 'India') {
             return drive.location.address.split(',')[0];
         }
-        // Build from title
         const parts = drive.title?.split(' ') || [];
         return parts.slice(0, 2).join(' ') || 'India';
     };
@@ -112,14 +115,13 @@ export default function Drives() {
                 width: '100vw', 
                 height: '100vh', 
                 zIndex: 2, 
-                background: 'linear-gradient(to bottom, rgba(5, 13, 26, 0.9) 0%, rgba(5, 13, 26, 0.4) 45%, rgba(5, 13, 26, 0.9) 100%)',
+                background: 'linear-gradient(to bottom, rgba(5, 13, 26, 0.8) 0%, rgba(5, 13, 26, 0.6) 100%)',
                 backdropFilter: 'blur(3px)' 
             }} />
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8" style={{ position: 'relative', zIndex: 3 }}>
                 {/* Header */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-12 relative">
-                    <div className="absolute -inset-10 bg-[radial-gradient(ellipse_at_center,_rgba(5,13,26,0.85)_0%,_rgba(5,13,26,0)_70%)] pointer-events-none -z-10" />
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
                             <h1 className="text-5xl sm:text-6xl font-extrabold text-white tracking-tight mb-4 font-[var(--font-display)] drop-shadow-md">
@@ -257,7 +259,7 @@ export default function Drives() {
                                     <div className="bg-slate-800/30 border border-slate-700/15 rounded-xl p-3 mb-6">
                                         <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
                                             <div className="flex items-center gap-1"><DollarSign size={14} /> Funding</div>
-                                            <span className="text-cyan-400">₹{(drive.currentFunding / 1000).toFixed(0)}k / {(drive.fundingGoal / 1000).toFixed(0)}k</span>
+                                            <span className="text-cyan-400">₹{((drive.currentFunding || 0) / 100000).toFixed(1)}k / ₹{((drive.fundingGoal || 0) / 100000).toFixed(1)}k</span>
                                         </div>
                                         <div className="h-2 bg-slate-800/50 rounded-full overflow-hidden">
                                             <div className="h-full bg-gradient-to-r from-cyan-500 to-blue-400 rounded-full" style={{ width: `${Math.min(fundProgress, 100)}%` }} />

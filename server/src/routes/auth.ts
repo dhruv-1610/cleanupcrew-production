@@ -146,7 +146,13 @@ router.get('/me', authenticate, async (req: Request, res: Response, next: NextFu
       name: user.profile?.name ?? user.email.split('@')[0],
       email: user.email,
       role: user.role,
-      drives: driveIds,
+      drives: driveIds, // backward compatibility
+      attendances: attendances.map(a => ({
+        driveId: a.driveId.toString(),
+        qrCode: a.qrCode,
+        status: a.status,
+        role: a.role
+      })),
       donations: donationList,
       badges: [badges.volunteerBadge, badges.donorBadge].filter((b) => b !== 'None'),
       points: checkedInCount * 100 + donations.length * 50,

@@ -10,6 +10,35 @@ function parsePeriod(req: Request): 'all-time' | 'monthly' {
   return parsed.data.period;
 }
 
+const mapVolunteers = (rawVolunteers: any[]) =>
+  rawVolunteers.map((v, idx) => {
+    const user = v.user;
+    const driveCount = v.driveCount ?? 0;
+    return {
+      rank: idx + 1,
+      name: user?.profile?.name ?? 'Volunteer',
+      drives: driveCount,
+      hours: driveCount * 4,
+      wasteKg: driveCount * 25,
+      badges: Math.min(driveCount, 5),
+      points: driveCount * 100,
+    };
+  });
+
+const mapDonors = (rawDonors: any[]) =>
+  rawDonors.map((d, idx) => {
+    const user = d.user;
+    const totalAmount = d.totalAmount ?? 0;
+    const driveCount = d.driveCount ?? 1;
+    return {
+      rank: idx + 1,
+      name: user?.profile?.name ?? 'Donor',
+      amount: totalAmount,
+      drives: driveCount,
+      badges: Math.min(Math.floor(totalAmount / 200000) + driveCount, 5),
+    };
+  });
+
 /** GET /api/leaderboard — Combined leaderboard (both volunteers + donors). */
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -19,34 +48,12 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       leaderboardService.getDonorLeaderboard(period),
     ]);
 
-    // Map to the shape the frontend expects
-    const volunteers = rawVolunteers.map((v: Record<string, unknown>, idx: number) => {
-      const user = v.user as { _id: { toString(): string }; profile?: { name?: string }; createdAt?: Date } | undefined;
-      const driveCount = (v.driveCount as number) ?? 0;
-      return {
-        rank: idx + 1,
-        name: user?.profile?.name ?? 'Volunteer',
-        drives: driveCount,
-        hours: driveCount * 4,
-        wasteKg: driveCount * 25,
-        badges: Math.min(driveCount, 5),
-        points: driveCount * 100,
-      };
+    res.json({
+      leaderboard: {
+        volunteers: mapVolunteers(rawVolunteers),
+        donors: mapDonors(rawDonors),
+      },
     });
-
-    const donors = rawDonors.map((d: Record<string, unknown>, idx: number) => {
-      const user = d.user as { _id: { toString(): string }; profile?: { name?: string }; createdAt?: Date } | undefined;
-      const totalAmount = (d.totalAmount as number) ?? 0;
-      return {
-        rank: idx + 1,
-        name: user?.profile?.name ?? 'Donor',
-        amount: totalAmount,
-        drives: Math.max(1, Math.floor(totalAmount / 100000)),
-        badges: Math.min(Math.floor(totalAmount / 200000), 5),
-      };
-    });
-
-    res.json({ leaderboard: { volunteers, donors } });
   } catch (error) {
     next(error);
   }
@@ -56,8 +63,8 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/donors', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const period = parsePeriod(req);
-    const donors = await leaderboardService.getDonorLeaderboard(period);
-    res.json({ donors });
+    const rawDonors = await leaderboardService.getDonorLeaderboard(period);
+    res.json({ donors: mapDonors(rawDonors) });
   } catch (error) {
     next(error);
   }
@@ -67,8 +74,8 @@ router.get('/donors', async (req: Request, res: Response, next: NextFunction) =>
 router.get('/volunteers', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const period = parsePeriod(req);
-    const volunteers = await leaderboardService.getVolunteerLeaderboard(period);
-    res.json({ volunteers });
+    const rawVolunteers = await leaderboardService.getVolunteerLeaderboard(period);
+    res.json({ volunteers: mapVolunteers(rawVolunteers) });
   } catch (error) {
     next(error);
   }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { mockBadges } from '../data/mockData';
 import { useApiData } from '../hooks/useApiData';
+import HlsVideoBg from '../components/HlsVideoBg';
 import { Award, Trophy, DollarSign, TrendingUp, Crown, Medal, Star } from 'lucide-react';
 
 const fadeUp = {
@@ -9,15 +9,22 @@ const fadeUp = {
     visible: (i = 0) => ({ opacity: 1, y: 0, transition: { delay: i * 0.04, duration: 0.5 } }),
 };
 
+const AVAILABLE_BADGES = [
+    { id: 'b1', name: 'First Drop', description: 'Participated in first drive', requirement: '1 Drive', icon: 'Star' },
+    { id: 'b2', name: 'Eco Warrior', description: 'Completed 5 cleanups', requirement: '5 Drives', icon: 'Leaf' },
+    { id: 'b3', name: 'Heavy Lifter', description: 'Collected 50kg+ waste', requirement: '50kg Waste', icon: 'Trophy' },
+    { id: 'b4', name: 'Seed Funder', description: 'Made first donation', requirement: '1 Donation', icon: 'DollarSign' }
+];
+
 export default function Leaderboard() {
     const [tab, setTab] = useState('volunteers');
 
     const { data: leaderboard, loading } = useApiData('/api/leaderboard', { volunteers: [], donors: [] }, {
         transform: (res) => {
-            const raw = res.leaderboard || res;
+            const raw = res?.leaderboard || res || {};
             return {
-                volunteers: raw.volunteers || [],
-                donors: raw.donors || [],
+                volunteers: raw?.volunteers || [],
+                donors: raw?.donors || [],
             };
         }
     });
@@ -40,8 +47,17 @@ export default function Leaderboard() {
     };
 
     return (
-        <div className="min-h-screen pt-32 pb-24">
-            <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="min-h-screen pt-32 pb-24 relative">
+            {/* Fixed Background Video */}
+            <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+                <HlsVideoBg 
+                    src="https://stream.mux.com/Kec29dVyJgiPdtWaQtPuEiiGHkJIYQAVUJcNiIHUYeo.m3u8" 
+                    className="w-full h-full object-cover opacity-40"
+                />
+                <div className="absolute inset-0 bg-slate-950/40" />
+            </div>
+
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
                 {/* Header */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-12">
                     <img src="/images/logo-light.png" alt="Logo" className="h-16 w-auto mx-auto mb-6 opacity-80" />
@@ -155,8 +171,8 @@ export default function Leaderboard() {
                             </div>
                             <div className="flex items-center gap-4 flex-shrink-0">
                                 <div className="hidden sm:flex items-center gap-1">
-                                    {mockBadges.slice(0, Math.min(item.badges, 5)).map((badge, i) => (
-                                        <img key={i} src={`https://api.dicebear.com/7.x/bottts/svg?seed=${badge.name}`} alt={badge.name} title={badge.name} className="w-6 h-6 rounded bg-slate-800/50 border border-slate-700/15 p-0.5" />
+                                    {item.badges && Array.isArray(item.badges) && item.badges.slice(0, 5).map((badgeStr, i) => (
+                                        <div key={i} className="text-[10px] bg-slate-800 border border-slate-700/50 rounded px-1.5 py-0.5 text-emerald-400">{badgeStr}</div>
                                     ))}
                                 </div>
                                 <div className="text-right">
@@ -178,7 +194,7 @@ export default function Leaderboard() {
                         Earn Badges
                     </h2>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl mx-auto">
-                        {mockBadges.map(badge => (
+                        {AVAILABLE_BADGES.map(badge => (
                             <div key={badge.id} className="glass-card p-5 text-center group">
                                 <img src={`https://api.dicebear.com/7.x/bottts/svg?seed=${badge.name}`} alt="Badge" className="w-14 h-14 mx-auto mb-3 group-hover:scale-110 transition-transform bg-slate-800/50 rounded-xl border border-slate-700/15 p-1" />
                                 <h4 className="text-sm font-bold text-slate-100 mb-1">{badge.name}</h4>

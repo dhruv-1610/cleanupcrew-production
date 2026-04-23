@@ -394,4 +394,84 @@ router.patch(
   },
 );
 
+// ── GET /api/drives/:driveId/donations — Public list of completed donations ─
+
+router.get(
+  '/:driveId/donations',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const driveId = Array.isArray(req.params.driveId)
+        ? req.params.driveId[0]
+        : req.params.driveId;
+
+      const { Donation } = await import('../models/donation.model');
+      const { isValidObjectId } = await import('../middleware/validateObjectId');
+
+      if (!isValidObjectId(driveId)) {
+        throw new BadRequestError('Invalid driveId');
+      }
+
+      const donations = await Donation.find({
+        driveId,
+        status: 'completed',
+      })
+        .populate('userId', 'profile')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      res.json({
+        donations: donations.map((d: any) => ({
+          id: d._id.toString(),
+          userId: d.userId?._id?.toString() || d.userId?.toString(),
+          userName: d.userId?.profile?.name || 'Anonymous Donor',
+          userAvatar: d.userId?.profile?.avatar || null,
+          amount: d.amount,
+          date: d.createdAt?.toISOString?.() ?? new Date().toISOString(),
+          status: d.status,
+        })),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// ── GET /api/drives/:driveId/expenses — Public list of expenses ─────────────
+
+router.get(
+  '/:driveId/expenses',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const driveId = Array.isArray(req.params.driveId)
+        ? req.params.driveId[0]
+        : req.params.driveId;
+
+      const { Expense } = await import('../models/expense.model');
+      const { isValidObjectId } = await import('../middleware/validateObjectId');
+
+      if (!isValidObjectId(driveId)) {
+        throw new BadRequestError('Invalid driveId');
+      }
+
+      const expenses = await Expense.find({ driveId })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      res.json({
+        expenses: expenses.map((e) => ({
+          id: e._id.toString(),
+          driveId: e.driveId.toString(),
+          category: e.category,
+          amount: e.amount,
+          proofUrl: e.proofUrl,
+          isVerified: e.isVerified,
+          date: e.createdAt?.toISOString?.() ?? new Date().toISOString(),
+        })),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 export default router;

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { mockDrives, mockDonations, mockExpenses } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { useApiData } from '../hooks/useApiData';
@@ -11,6 +10,7 @@ import {
     Package, Heart, QrCode, Share2, ChevronDown
 } from 'lucide-react';
 import StripePaymentModal from '../components/StripePaymentModal';
+import BookingModal from '../components/BookingModal';
 
 export default function DriveDetail() {
     const { id } = useParams();
@@ -19,20 +19,31 @@ export default function DriveDetail() {
     const [donateAmount, setDonateAmount] = useState('');
     const [showDonate, setShowDonate] = useState(false);
     const [showStripe, setShowStripe] = useState(false);
-    const [booked, setBooked] = useState(false);
+    const [justBooked, setJustBooked] = useState(false);
     const [donated, setDonated] = useState(false);
     const [paymentInfo, setPaymentInfo] = useState(null);
     const [activeTab, setActiveTab] = useState('overview');
+    const [showBookingModal, setShowBookingModal] = useState(false);
 
-    const fallbackDrive = mockDrives.find(d => d.id === id);
-    const { data: driveData, loading, refetch } = useApiData(`/api/drives/${id}`, fallbackDrive, {
+    const { data: driveData, loading, refetch } = useApiData(`/api/drives/${id}`, null, {
+        pollInterval: 10000, // Poll every 10s for real-time volunteer/funding updates
         transform: (res) => {
             const d = res.drive || res;
-            if (!d) return fallbackDrive;
+            if (!d) return null;
+            
+            const impact = d.impactSummary ? {
+                wasteKg: d.impactSummary.wasteCollected || 0,
+                areaSqm: d.impactSummary.areaCleaned || 0,
+                workHours: d.impactSummary.workHours || 0,
+                volunteerCount: d.currentVolunteers ?? d.requiredRoles?.reduce((s, r) => s + (r.booked || 0), 0) ?? 0,
+                beforePhotos: d.impactSummary.beforePhotos || [],
+                afterPhotos: d.impactSummary.afterPhotos || []
+            } : null;
+
             return {
                 ...d,
                 id: d._id || d.id,
-                location: d.location?.address ? d.location : { address: 'Unknown', lat: 0, lng: 0, ...d.location },
+                location: { address: d.locationAddress || d.location?.address || 'Location TBD', ...d.location },
                 roles: d.roles || (d.requiredRoles ? Object.fromEntries(
                     d.requiredRoles.map(r => [r.role, { max: r.capacity, filled: r.booked || 0 }])
                 ) : {}),
@@ -42,8 +53,17 @@ export default function DriveDetail() {
                 fundingGoal: d.fundingGoal ?? 0,
                 severity: d.severity || 'medium',
                 status: d.status === 'planned' ? 'upcoming' : d.status,
+                impact: impact || d.impact
             };
         }
+    });
+
+    // Fetch REAL donations and expenses for this drive from API
+    const { data: driveDonations } = useApiData(`/api/drives/${id}/donations`, [], {
+        transform: (res) => res.donations || [],
+    });
+    const { data: driveExpenses } = useApiData(`/api/drives/${id}/expenses`, [], {
+        transform: (res) => res.expenses || [],
     });
 
     const handleShare = async () => {
@@ -57,20 +77,37 @@ export default function DriveDetail() {
         } catch { /* ignore */ }
     };
 
-    const handleBooking = async () => {
+    const handleBooking = () => {
         if (!selectedRole || !isAuthenticated) return;
+        setShowBookingModal(true);
+    };
+
+    const handleConfirmBooking = async (formData) => {
         try {
             if (apiOnline) {
+                // First, patch the user profile with the new form data
+                await api.patch('/api/users/me', {
+                    emergencyContact: formData.emergencyContact,
+                    medicalNotes: formData.medicalNotes
+                });
+                
+                // Then, book the slot
                 await api.post(`/api/drives/${id}/book`, { role: selectedRole });
+                
                 await refetch();
-                // Refresh user data so Dashboard shows updated drives
                 await refreshUser();
             }
-            setBooked(true);
+            setShowBookingModal(false);
+            setJustBooked(true);
         } catch (error) {
-            alert(error.response?.data?.error?.message || 'Booking failed');
+            throw new Error(error.response?.data?.error?.message || 'Booking failed');
         }
     };
+
+    // Derive booked state from user's attendance records (persists across page reloads)
+    const existingAttendance = user?.attendances?.find(a => a.driveId === id) || user?.drives?.includes(id);
+    const booked = justBooked || !!existingAttendance;
+    const bookedRole = (typeof existingAttendance === 'object' ? existingAttendance.role : null) || selectedRole;
 
     const handlePaymentSuccess = async (info) => {
         setPaymentInfo(info);
@@ -108,11 +145,9 @@ export default function DriveDetail() {
         </div>
     );
 
-    const volProgress = (drive.currentVolunteers / drive.maxVolunteers) * 100;
-    const fundProgress = (drive.currentFunding / drive.fundingGoal) * 100;
-    const driveDonations = mockDonations.filter(d => d.driveId === drive.id);
-    const driveExpenses = mockExpenses.filter(e => e.driveId === drive.id);
-    const totalExpenses = driveExpenses.reduce((s, e) => s + e.amount, 0);
+    const volProgress = drive.maxVolunteers > 0 ? (drive.currentVolunteers / drive.maxVolunteers) * 100 : 0;
+    const fundProgress = drive.fundingGoal > 0 ? (drive.currentFunding / drive.fundingGoal) * 100 : 0;
+    const totalExpenses = (driveExpenses || []).reduce((s, e) => s + (e.amount || 0), 0);
 
     const handleDonateModal = () => {
         if (!donateAmount || Number(donateAmount) <= 0) return;
@@ -226,7 +261,7 @@ export default function DriveDetail() {
                                         <div>
                                             <div className="flex justify-between text-sm mb-2">
                                                 <span className="text-slate-400">Funding</span>
-                                                <span className="text-cyan-400 font-semibold">₹{drive.currentFunding.toLocaleString()} / ₹{drive.fundingGoal.toLocaleString()}</span>
+                                                <span className="text-cyan-400 font-semibold">₹{(drive.currentFunding / 100).toLocaleString()} / ₹{(drive.fundingGoal / 100).toLocaleString()}</span>
                                             </div>
                                             <div className="h-2.5 bg-slate-800/50 border border-slate-700/15 rounded-full overflow-hidden">
                                                 <motion.div initial={{ width: 0 }} animate={{ width: `${fundProgress}%` }} transition={{ duration: 1, ease: 'easeOut', delay: 0.2 }} className="h-full bg-gradient-to-r from-cyan-500 to-blue-400 rounded-full" />
@@ -262,12 +297,13 @@ export default function DriveDetail() {
                                         {booked ? (
                                             <div className="text-center py-4">
                                                 <CheckCircle2 size={40} className="text-emerald-400 mx-auto mb-2" />
-                                                <p className="text-sm font-semibold text-emerald-400">Slot Booked!</p>
-                                                <p className="text-xs text-slate-400 mt-1">Role: {selectedRole}</p>
+                                                <p className="text-sm font-semibold text-emerald-400">You've Already Booked!</p>
+                                                {bookedRole && <p className="text-xs text-slate-400 mt-1">Role: {bookedRole}</p>}
                                                 <div className="mt-4 p-3 bg-slate-800/30 border border-slate-700/15 rounded-xl">
                                                     <QrCode size={80} className="text-emerald-400/40 mx-auto" />
                                                     <p className="text-[10px] text-slate-500 mt-2">Your QR code for attendance</p>
                                                 </div>
+                                                <p className="text-[10px] text-slate-500 mt-3">Check your Dashboard for your entry pass</p>
                                             </div>
                                         ) : isAuthenticated ? (
                                             <div>
@@ -383,45 +419,52 @@ export default function DriveDetail() {
                             {/* Donations */}
                             <div className="glass-card p-6">
                                 <h3 className="text-lg font-bold text-slate-100 mb-4 font-[var(--font-display)]">Recent Donations</h3>
-                                {driveDonations.length > 0 ? (
+                                {driveDonations && driveDonations.length > 0 ? (
                                     <div className="space-y-3">
                                         {driveDonations.map(don => (
                                             <div key={don.id} className="flex items-center gap-3 p-3 bg-slate-800/30 border border-slate-700/15 rounded-xl">
-                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-slate-900 text-xs font-bold">
-                                                    {don.userName.charAt(0)}
-                                                </div>
+                                                {don.userAvatar ? (
+                                                    <img src={don.userAvatar} alt={don.userName} className="w-8 h-8 rounded-full object-cover" />
+                                                ) : (
+                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-slate-900 text-xs font-bold">
+                                                        {don.userName ? don.userName.charAt(0).toUpperCase() : <Heart size={14} />}
+                                                    </div>
+                                                )}
                                                 <div className="flex-1">
-                                                    <div className="text-sm font-semibold text-slate-200">{don.userName}</div>
-                                                    {don.message && <div className="text-xs text-slate-400">"{don.message}"</div>}
+                                                    <div className="text-sm font-semibold text-slate-200">{don.userName || 'Anonymous Donor'}</div>
+                                                    <div className="text-xs text-slate-400">{new Date(don.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
                                                 </div>
-                                                <div className="text-sm font-bold text-emerald-400">₹{don.amount.toLocaleString()}</div>
+                                                <div className="text-sm font-bold text-emerald-400">₹{(don.amount / 100).toLocaleString()}</div>
                                             </div>
                                         ))}
                                     </div>
                                 ) : (
-                                    <p className="text-sm text-slate-400">No donations yet. Be the first!</p>
+                                    <div className="text-center py-6">
+                                        <Heart size={32} className="text-slate-600 mx-auto mb-3" />
+                                        <p className="text-sm text-slate-400">No donations yet. Be the first to support this drive!</p>
+                                    </div>
                                 )}
                             </div>
 
                             {/* Expenses */}
-                            {driveExpenses.length > 0 && (
+                            {driveExpenses && driveExpenses.length > 0 && (
                                 <div className="glass-card p-6">
                                     <h3 className="text-lg font-bold text-slate-100 mb-4 font-[var(--font-display)]">Expense Breakdown</h3>
                                     <div className="space-y-3">
                                         {driveExpenses.map(exp => {
-                                            const ExpIcon = categoryIcons[exp.category] || Package;
+                                            const ExpIcon = categoryIcons[exp.category?.charAt(0).toUpperCase() + exp.category?.slice(1)] || Package;
                                             return (
                                                 <div key={exp.id} className="flex items-center gap-3 p-3 bg-slate-800/30 border border-slate-700/15 rounded-xl">
                                                     <div className="w-8 h-8 rounded-lg bg-emerald-500/8 border border-emerald-500/10 flex items-center justify-center">
                                                         <ExpIcon size={16} className="text-emerald-400" />
                                                     </div>
                                                     <div className="flex-1">
-                                                        <div className="text-sm font-semibold text-slate-200">{exp.category}</div>
-                                                        <div className="text-xs text-slate-400">{exp.description}</div>
+                                                        <div className="text-sm font-semibold text-slate-200 capitalize">{exp.category}</div>
+                                                        <div className="text-xs text-slate-400">{new Date(exp.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
                                                     </div>
                                                     <div className="text-right">
-                                                        <div className="text-sm font-bold text-slate-200">₹{exp.amount.toLocaleString()}</div>
-                                                        {exp.receipt && <span className="text-[9px] text-emerald-400">✓ Receipt</span>}
+                                                        <div className="text-sm font-bold text-slate-200">₹{((exp.amount || 0) / 100).toLocaleString()}</div>
+                                                        {exp.isVerified && <span className="text-[9px] text-emerald-400">✓ Verified</span>}
                                                     </div>
                                                 </div>
                                             );
@@ -429,7 +472,7 @@ export default function DriveDetail() {
                                     </div>
                                     <div className="mt-4 pt-4 border-t border-slate-700/20 flex items-center justify-between">
                                         <span className="text-sm font-medium text-slate-400">Total Expenses</span>
-                                        <span className="text-lg font-bold text-slate-100">₹{totalExpenses.toLocaleString()}</span>
+                                        <span className="text-lg font-bold text-slate-100">₹{(totalExpenses / 100).toLocaleString()}</span>
                                     </div>
                                 </div>
                             )}
@@ -454,12 +497,44 @@ export default function DriveDetail() {
                                         </div>
                                     ))}
                                 </div>
-                                <p className="text-sm text-slate-400 text-center mb-4">Before/after images and detailed records available on the Transparency Portal.</p>
-                                <div className="text-center">
-                                    <Link to={`/certificate/${drive.id}`} className="btn-primary inline-flex items-center gap-2">
-                                        <Award size={18} /> Get Your Certificate
-                                    </Link>
-                                </div>
+
+                                {/* Impact Photos Gallery */}
+                                {(drive.impact.beforePhotos?.length > 0 || drive.impact.afterPhotos?.length > 0) && (
+                                    <div className="mb-8">
+                                        <h4 className="text-lg font-bold text-slate-100 mb-4 font-[var(--font-display)]">Visual Impact</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            {drive.impact.beforePhotos?.length > 0 && (
+                                                <div className="space-y-2">
+                                                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Before</div>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        {drive.impact.beforePhotos.map((url, idx) => (
+                                                            <img key={idx} src={`${import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : '')}${url}`} className="w-full h-32 object-cover rounded-xl border border-slate-700/30" alt="Before" />
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {drive.impact.afterPhotos?.length > 0 && (
+                                                <div className="space-y-2">
+                                                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">After</div>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        {drive.impact.afterPhotos.map((url, idx) => (
+                                                            <img key={idx} src={`${import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : '')}${url}`} className="w-full h-32 object-cover rounded-xl border border-slate-700/30" alt="After" />
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <p className="text-sm text-slate-400 text-center mb-4">Detailed records available on the Transparency Portal.</p>
+                                {isAuthenticated && user?.drives?.includes(drive.id) && (
+                                    <div className="text-center">
+                                        <Link to={`/certificate/${drive.id}`} className="btn-primary inline-flex items-center gap-2">
+                                            <Award size={18} /> Get Your Certificate
+                                        </Link>
+                                    </div>
+                                )}
                             </div>
                         </motion.div>
                     )}
@@ -473,6 +548,15 @@ export default function DriveDetail() {
                 amount={Number(donateAmount) || 0}
                 driveName={drive.title}
                 onPaymentSuccess={handlePaymentSuccess}
+            />
+
+            {/* Booking Modal */}
+            <BookingModal
+                isOpen={showBookingModal}
+                onClose={() => setShowBookingModal(false)}
+                role={selectedRole}
+                driveName={drive.title}
+                onConfirm={handleConfirmBooking}
             />
         </div>
     );

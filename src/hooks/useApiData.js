@@ -1,63 +1,71 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
 
 /**
- * Custom hook: fetch from API, fall back to mock data if API is down.
- * @param {string} url — API endpoint (e.g. '/api/drives')
- * @param {*} mockFallback — fallback data if API fails
- * @param {object} opts — { params, transform, skip }
+ * Custom hook for fetching API data with automatic polling, error handling,
+ * and graceful fallback support.
+ *
+ * @param {string} url - API endpoint path
+ * @param {*} fallback - Fallback value if API fails
+ * @param {Object} options
+ * @param {Function} options.transform - Transform function for raw response data
+ * @param {number|null} options.pollInterval - Polling interval in ms (null = no polling)
+ * @param {boolean} options.skip - Skip the fetch if true
  */
-export function useApiData(url, mockFallback, opts = {}) {
-    const { params, transform, skip = false } = opts;
-    const [data, setData] = useState(null);
+export function useApiData(url, fallback = null, options = {}) {
+    const { transform, pollInterval = null, skip = false } = options;
+    const [data, setData] = useState(fallback);
     const [loading, setLoading] = useState(!skip);
     const [error, setError] = useState(null);
-    const [isLive, setIsLive] = useState(false);
+    const mountedRef = useRef(true);
+    const intervalRef = useRef(null);
 
-    useEffect(() => {
-        if (skip) {
-            setData(mockFallback);
-            setLoading(false);
-            return;
-        }
-
-        let cancelled = false;
-
-        async function fetchData() {
-            setLoading(true);
-            try {
-                const res = await api.get(url, { params, timeout: 5000 });
-                if (!cancelled) {
-                    const result = transform ? transform(res.data) : res.data;
-                    setData(result);
-                    setIsLive(true);
-                }
-            } catch {
-                if (!cancelled) {
-                    setData(mockFallback);
-                    setIsLive(false);
-                }
-            } finally {
-                if (!cancelled) setLoading(false);
+    const fetchData = useCallback(async (isPolling = false) => {
+        if (skip) return;
+        // Only set loading on initial fetch, not on polling
+        if (!isPolling) setLoading(true);
+        try {
+            const { data: raw } = await api.get(url);
+            if (!mountedRef.current) return;
+            const result = transform ? transform(raw) : raw;
+            setData(result);
+            setError(null);
+        } catch (err) {
+            if (!mountedRef.current) return;
+            // Only set error on initial fetch, polling failures are silent
+            if (!isPolling) {
+                setError(err);
+                // Keep existing data on polling error, use fallback only on initial fail
+                if (data === fallback) setData(fallback);
             }
+        } finally {
+            if (mountedRef.current && !isPolling) setLoading(false);
         }
-
-        fetchData();
-        return () => { cancelled = true; };
     }, [url, skip]);
 
-    return { data, loading, error, isLive, refetch: () => {
-        setLoading(true);
-        api.get(url, { params, timeout: 5000 })
-            .then(res => {
-                const result = transform ? transform(res.data) : res.data;
-                setData(result);
-                setIsLive(true);
-            })
-            .catch(() => {
-                setData(mockFallback);
-                setIsLive(false);
-            })
-            .finally(() => setLoading(false));
-    }};
+    // Initial fetch
+    useEffect(() => {
+        mountedRef.current = true;
+        fetchData(false);
+        return () => { mountedRef.current = false; };
+    }, [fetchData]);
+
+    // Polling
+    useEffect(() => {
+        if (pollInterval && pollInterval > 0 && !skip) {
+            intervalRef.current = setInterval(() => {
+                fetchData(true);
+            }, pollInterval);
+        }
+        return () => {
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
+            }
+        };
+    }, [pollInterval, fetchData, skip]);
+
+    const refetch = useCallback(() => fetchData(false), [fetchData]);
+
+    return { data, loading, error, refetch };
 }

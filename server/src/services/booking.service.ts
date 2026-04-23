@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import mongoose from 'mongoose';
 import { Drive } from '../models/drive.model';
 import { Attendance } from '../models/attendance.model';
 import { User } from '../models/user.model';
@@ -9,6 +8,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../utils/errors';
+import { toObjectId } from '../middleware/validateObjectId';
 
 /** 24 hours in milliseconds. */
 const CANCELLATION_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -28,8 +28,8 @@ export async function bookSlot(
   userId: string,
   role: string,
 ): Promise<BookSlotResult> {
-  const driveObjectId = new mongoose.Types.ObjectId(driveId);
-  const userObjectId = new mongoose.Types.ObjectId(userId);
+  const driveObjectId = toObjectId(driveId, 'driveId');
+  const userObjectId = toObjectId(userId, 'userId');
 
   const user = await User.findById(userObjectId);
   if (!user || user.role !== 'user') {
@@ -127,8 +127,8 @@ export async function cancelBooking(
   driveId: string,
   userId: string,
 ): Promise<CancelBookingResult> {
-  const driveObjectId = new mongoose.Types.ObjectId(driveId);
-  const userObjectId = new mongoose.Types.ObjectId(userId);
+  const driveObjectId = toObjectId(driveId, 'driveId');
+  const userObjectId = toObjectId(userId, 'userId');
 
   const attendance = await Attendance.findOne({
     driveId: driveObjectId,
@@ -191,7 +191,7 @@ export async function checkIn(
   qrCode: string,
   _performedBy: string,
 ): Promise<CheckinResult> {
-  const driveObjectId = new mongoose.Types.ObjectId(driveId);
+  const driveObjectId = toObjectId(driveId, 'driveId');
 
   const drive = await Drive.findById(driveObjectId);
   if (!drive) {

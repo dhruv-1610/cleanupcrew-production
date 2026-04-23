@@ -2,14 +2,14 @@ import { useState } from 'react';
 import { Link, useNavigate, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { Mail, Lock, User, Eye, EyeOff, ArrowRight, Users, DollarSign } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, ArrowRight } from 'lucide-react';
 
 export default function Register() {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
-    const [role, setRole] = useState('');
+
     const [showPass, setShowPass] = useState(false);
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
@@ -28,12 +28,12 @@ export default function Register() {
         e.preventDefault();
         setError('');
         setSuccessMsg('');
-        if (!name || !email || !password || !confirmPassword || !role) { setError('Please fill all fields'); return; }
+        if (!name || !email || !password || !confirmPassword) { setError('Please fill all fields'); return; }
         if (password !== confirmPassword) { setError('Passwords do not match'); return; }
         if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
         setLoading(true);
         try {
-            const result = await doRegister(name, email, password, role);
+            const result = await doRegister(name, email, password);
             if (result.success) {
                 setSuccessMsg(result.message || 'Registration successful. Please check your email.');
                 // Don't navigate, let them read the message
@@ -108,36 +108,7 @@ export default function Register() {
                                 </div>
                             </div>
 
-                            {/* Role selection */}
-                            <div>
-                                <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Select Role</label>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => setRole('volunteer')}
-                                        className={`p-4 rounded-xl border text-center transition-all ${role === 'volunteer'
-                                                ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400'
-                                                : 'bg-slate-800/30 border-slate-700/15 text-slate-400 hover:border-emerald-500/15'
-                                            }`}
-                                    >
-                                        <Users size={24} className="mx-auto mb-2" />
-                                        <div className="text-sm font-bold">Volunteer</div>
-                                        <div className="text-[10px] mt-1 opacity-70">Join cleanup drives</div>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setRole('donor')}
-                                        className={`p-4 rounded-xl border text-center transition-all ${role === 'donor'
-                                                ? 'bg-cyan-500/10 border-cyan-500/25 text-cyan-400'
-                                                : 'bg-slate-800/30 border-slate-700/15 text-slate-400 hover:border-cyan-500/15'
-                                            }`}
-                                    >
-                                        <DollarSign size={24} className="mx-auto mb-2" />
-                                        <div className="text-sm font-bold">Donor</div>
-                                        <div className="text-[10px] mt-1 opacity-70">Fund the mission</div>
-                                    </button>
-                                </div>
-                            </div>
+
 
                             <div>
                                 <label className="block text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">Password</label>

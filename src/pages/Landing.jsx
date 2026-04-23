@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { mockStats, mockDrives, mockLeaderboard } from '../data/mockData';
 import { useApiData } from '../hooks/useApiData';
+import HlsVideoBg from '../components/HlsVideoBg';
 import { MapPin, Users, Leaf, DollarSign, ArrowRight, Sparkles, CheckCircle2, Clock, Zap, TrendingUp, Globe, Award, ChevronRight } from 'lucide-react';
 
 const fadeUp = {
@@ -28,8 +28,8 @@ function StatCard({ icon: Icon, value, label }) {
 }
 
 function DriveCard({ drive }) {
-    const progress = (drive.currentVolunteers / drive.maxVolunteers) * 100;
-    const fundProgress = (drive.currentFunding / drive.fundingGoal) * 100;
+    const progress = drive.maxVolunteers > 0 ? (drive.currentVolunteers / drive.maxVolunteers) * 100 : 0;
+    const fundProgress = drive.fundingGoal > 0 ? (drive.currentFunding / drive.fundingGoal) * 100 : 0;
 
     return (
         <motion.div variants={fadeUp} className="glass-card hover:translate-y-[-4px] transition-all">
@@ -62,7 +62,7 @@ function DriveCard({ drive }) {
                 <div className="bg-slate-800/30 border border-slate-700/20 rounded-xl p-3 mb-5">
                     <div className="flex justify-between text-xs font-medium text-slate-400 mb-1.5">
                         <span>Funding</span>
-                        <span className="text-cyan-400">₹{(drive.currentFunding / 1000).toFixed(0)}k / ₹{(drive.fundingGoal / 1000).toFixed(0)}k</span>
+                        <span className="text-cyan-400">₹{((drive.currentFunding || 0) / 100000).toFixed(1)}k / ₹{((drive.fundingGoal || 0) / 100000).toFixed(1)}k</span>
                     </div>
                     <div className="h-2 bg-slate-800/50 rounded-full overflow-hidden">
                         <div className="h-full bg-gradient-to-r from-cyan-500 to-blue-400 rounded-full" style={{ width: `${fundProgress}%` }} />
@@ -84,9 +84,9 @@ function DriveCard({ drive }) {
 }
 
 export default function Landing() {
-    const { data: apiDrives } = useApiData('/api/drives', mockDrives, {
+    const { data: apiDrives } = useApiData('/api/drives', [], {
         transform: (res) => {
-            const arr = Array.isArray(res) ? res : (res.drives || []);
+            const arr = Array.isArray(res) ? res : (res?.drives || []);
             return arr.map(d => ({
                 ...d,
                 id: d._id || d.id,
@@ -99,13 +99,25 @@ export default function Landing() {
             }));
         }
     });
-    const { data: apiStats } = useApiData('/api/transparency', mockStats, {
-        transform: (res) => res.stats || res
+    const { data: apiStats } = useApiData('/api/transparency', null, {
+        pollInterval: 10000,
+        transform: (res) => res?.stats || res
     });
 
-    const allDrives = apiDrives?.length > 0 ? apiDrives : mockDrives;
-    const stats = apiStats?.totalDrives ? apiStats : mockStats;
+    const allDrives = apiDrives || [];
+    const stats = apiStats || { totalFundsRaised: 0, totalWasteKg: 0, totalVolunteers: 0, completedDrives: 0 };
     const activeDrives = allDrives.filter(d => d.status === 'active' || d.status === 'upcoming');
+
+    const { data: apiLeaderboard } = useApiData('/api/leaderboard', { volunteers: [], donors: [] }, {
+        transform: (res) => {
+            const raw = res?.leaderboard || res || {};
+            return {
+                volunteers: raw?.volunteers || [],
+                donors: raw?.donors || [],
+            };
+        }
+    });
+    const leaderboard = apiLeaderboard || { volunteers: [], donors: [] };
 
     return (
         <div className="min-h-screen">
@@ -128,7 +140,7 @@ export default function Landing() {
                 <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center" style={{ zIndex: 2 }}>
 
                     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 px-5 py-1.5 rounded-full bg-emerald-500/10 backdrop-blur-sm text-emerald-400 border border-emerald-500/20 font-semibold text-sm mb-6">
-                        <Sparkles size={16} /> {mockStats.completedDrives} Drives Completed Nationwide
+                        <Sparkles size={16} /> {stats.completedDrives || 0} Drives Completed Nationwide
                     </motion.div>
 
                     <motion.h1 initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-5xl sm:text-7xl lg:text-[90px] font-extrabold leading-none tracking-tight mb-6 font-[var(--font-display)]">
@@ -151,16 +163,27 @@ export default function Landing() {
                 </div>
             </section>
 
-            {/* IMPACT STATS */}
-            <section className="py-20 relative">
+            {/* LOWER SECTIONS WRAPPER */}
+            <div className="relative">
+                {/* Background Video for lower sections */}
+                <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+                    <HlsVideoBg 
+                        src="https://stream.mux.com/tLkHO1qZoaaQOUeVWo8hEBeGQfySP02EPS02BmnNFyXys.m3u8" 
+                        className="absolute w-full h-full object-cover opacity-60"
+                    />
+                </div>
+                
+                <div className="relative z-10">
+                    {/* IMPACT STATS */}
+                    <section className="py-20 relative">
                 {/* Subtle section separator */}
                 <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent" />
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <StatCard icon={Leaf} value={`${(mockStats.totalWasteKg / 1000).toFixed(1)}T`} label="Waste Collected" />
-                        <StatCard icon={Users} value={mockStats.totalVolunteers} label="Volunteers" />
-                        <StatCard icon={DollarSign} value={`₹${(mockStats.totalFundsRaised / 100000).toFixed(1)}L`} label="Funds Raised" />
-                        <StatCard icon={Globe} value={mockStats.completedDrives} label="Locations Cleaned" />
+                        <StatCard icon={Leaf} value={`${(stats.totalWasteKg || 0).toLocaleString()}kg`} label="Waste Collected" />
+                        <StatCard icon={Users} value={(stats.totalVolunteers || 0).toLocaleString()} label="Volunteers" />
+                        <StatCard icon={DollarSign} value={`₹${((stats.totalFundsRaised || 0) / 100).toLocaleString('en-IN')}`} label="Funds Raised" />
+                        <StatCard icon={Globe} value={(stats.completedDrives || 0).toLocaleString()} label="Locations Cleaned" />
                     </motion.div>
                 </div>
             </section>
@@ -221,40 +244,44 @@ export default function Landing() {
                         <div className="glass-card p-8">
                             <h3 className="text-xl font-bold text-slate-100 mb-6 flex items-center gap-2 border-b border-slate-700/20 pb-3 font-[var(--font-display)]"><Award className="text-emerald-400" /> Top Volunteers</h3>
                             <div className="space-y-3">
-                                {mockLeaderboard.volunteers.slice(0, 3).map((v) => (
-                                    <div key={v.rank} className="flex items-center gap-4 p-3 bg-slate-800/30 border border-slate-700/15 rounded-xl hover:-translate-y-0.5 transition-transform">
-                                        <div className="text-lg font-bold text-slate-400 w-6 text-center">{v.rank}</div>
+                                {leaderboard.volunteers.slice(0, 3).map((v, i) => (
+                                    <div key={v.id || i} className="flex items-center gap-4 p-3 bg-slate-800/30 border border-slate-700/15 rounded-xl hover:-translate-y-0.5 transition-transform">
+                                        <div className="text-lg font-bold text-slate-400 w-6 text-center">{i + 1}</div>
                                         <img src={`https://api.dicebear.com/7.x/pixel-art/svg?seed=${v.name}`} alt={v.name} className="w-10 h-10 bg-slate-800 rounded-lg" />
                                         <div className="flex-1">
                                             <div className="font-semibold text-slate-200 leading-tight text-sm">{v.name}</div>
-                                            <div className="text-[10px] font-medium text-slate-500 uppercase">{v.hours} hours logged</div>
+                                            <div className="text-[10px] font-medium text-slate-500 uppercase">{v.hoursVolunteered || 0} hours logged</div>
                                         </div>
                                         <div className="font-bold text-lg text-emerald-400">{v.points}</div>
                                     </div>
                                 ))}
+                                {leaderboard.volunteers.length === 0 && <p className="text-slate-500 text-sm">No top volunteers yet.</p>}
                             </div>
                         </div>
 
                         <div className="glass-card p-8">
                             <h3 className="text-xl font-bold text-slate-100 mb-6 flex items-center gap-2 border-b border-slate-700/20 pb-3 font-[var(--font-display)]"><DollarSign className="text-cyan-400" /> Top Donors</h3>
                             <div className="space-y-3">
-                                {mockLeaderboard.donors.slice(0, 3).map((d) => (
-                                    <div key={d.rank} className="flex items-center gap-4 p-3 bg-slate-800/30 border border-slate-700/15 rounded-xl hover:-translate-y-0.5 transition-transform">
-                                        <div className="text-lg font-bold text-slate-400 w-6 text-center">{d.rank}</div>
+                                {leaderboard.donors.slice(0, 3).map((d, i) => (
+                                    <div key={d.id || i} className="flex items-center gap-4 p-3 bg-slate-800/30 border border-slate-700/15 rounded-xl hover:-translate-y-0.5 transition-transform">
+                                        <div className="text-lg font-bold text-slate-400 w-6 text-center">{i + 1}</div>
                                         <img src={`https://api.dicebear.com/7.x/pixel-art/svg?seed=${d.name}`} alt={d.name} className="w-10 h-10 bg-slate-800 rounded-lg" />
                                         <div className="flex-1">
                                             <div className="font-semibold text-slate-200 leading-tight text-sm">{d.name}</div>
-                                            <div className="text-[10px] font-medium text-slate-500 uppercase">{d.drives} drives funded</div>
+                                            <div className="text-[10px] font-medium text-slate-500 uppercase">{d.donationCount || 1} drives funded</div>
                                         </div>
-                                        <div className="font-bold text-lg text-cyan-400">₹{(d.amount / 1000).toFixed(0)}k</div>
+                                        <div className="font-bold text-lg text-cyan-400">₹{((d.totalDonated || 0) / 100).toLocaleString()}</div>
                                     </div>
                                 ))}
+                                {leaderboard.donors.length === 0 && <p className="text-slate-500 text-sm">No top donors yet.</p>}
                             </div>
                         </div>
                     </div>
                 </div>
             </section>
         </div>
+    </div>
+</div>
     );
 }
 

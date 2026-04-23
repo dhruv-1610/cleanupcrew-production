@@ -1,7 +1,7 @@
-import mongoose from 'mongoose';
 import { Drive } from '../models/drive.model';
 import { Expense, IExpense, ExpenseCategory } from '../models/expense.model';
 import { BadRequestError, NotFoundError } from '../utils/errors';
+import { toObjectId } from '../middleware/validateObjectId';
 
 // ── Create expense ──────────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ export interface CreateExpenseInput {
  * Drive must exist. isVerified defaults to false.
  */
 export async function createExpense(input: CreateExpenseInput): Promise<IExpense> {
-  const driveObjectId = new mongoose.Types.ObjectId(input.driveId);
+  const driveObjectId = toObjectId(input.driveId, 'driveId');
 
   const drive = await Drive.findById(driveObjectId);
   if (!drive) {
@@ -41,7 +41,7 @@ export async function createExpense(input: CreateExpenseInput): Promise<IExpense
  * Expense cannot be verified if already verified.
  */
 export async function verifyExpense(expenseId: string, verifiedBy: string): Promise<IExpense> {
-  const expenseObjectId = new mongoose.Types.ObjectId(expenseId);
+  const expenseObjectId = toObjectId(expenseId, 'expenseId');
 
   const expense = await Expense.findById(expenseObjectId);
   if (!expense) {
@@ -53,7 +53,7 @@ export async function verifyExpense(expenseId: string, verifiedBy: string): Prom
   }
 
   expense.isVerified = true;
-  expense.verifiedBy = new mongoose.Types.ObjectId(verifiedBy);
+  expense.verifiedBy = toObjectId(verifiedBy, 'verifiedBy');
   expense.verifiedAt = new Date();
   await expense.save();
 

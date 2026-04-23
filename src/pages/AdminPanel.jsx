@@ -7,8 +7,9 @@ import { api } from '../lib/api';
 import {
     MapPin, Users, DollarSign, Shield,
     BarChart3, Plus, Edit, Trash2, CheckCircle2, X, QrCode,
-    Upload, Eye, AlertTriangle, Globe
+    Upload, Eye, AlertTriangle, Globe, Camera
 } from 'lucide-react';
+import QRScanner from '../components/QRScanner';
 
 const fadeUp = {
     hidden: { opacity: 0, y: 20 },
@@ -34,33 +35,39 @@ export default function AdminPanel() {
 
     // Add Expense modal
     const [showAddExpense, setShowAddExpense] = useState(false);
-    const [expenseForm, setExpenseForm] = useState({ driveId: '', category: 'equipment', amount: '', description: '' });
+    const [expenseForm, setExpenseForm] = useState({ driveId: '', category: 'equipment', amount: '', description: '', proof: null });
     const [addingExpense, setAddingExpense] = useState(false);
     const [editing, setEditing] = useState(false);
 
+    // Impact form
+    const [showImpactForm, setShowImpactForm] = useState(null); // driveId
+    const [impactForm, setImpactForm] = useState({ wasteCollected: '', areaCleaned: '', workHours: '', beforePhotos: [], afterPhotos: [] });
+    const [submittingImpact, setSubmittingImpact] = useState(false);
+
+    // Scanner state
+    const [isScanning, setIsScanning] = useState(false);
+    const [scannerDriveId, setScannerDriveId] = useState('');
+    const [scanProcessing, setScanProcessing] = useState(false);
+
     const { data: apiDrives, loading: drivesLoading, refetch: refetchDrives } = useApiData('/api/drives', [], {
+        pollInterval: 10000, // Real-time updates for admin
         transform: (res) => {
-            const arr = Array.isArray(res) ? res : (res.drives || []);
+            const arr = Array.isArray(res) ? res : (res?.drives || []);
             return arr.map(d => ({ ...d, id: d._id || d.id, severity: d.severity || 'medium', status: d.status === 'planned' ? 'upcoming' : d.status }));
         }
     });
     const { data: apiSpots, loading: spotsLoading, refetch: refetchSpots } = useApiData('/api/reports', [], {
+        pollInterval: 20000,
         transform: (res) => {
-            const arr = Array.isArray(res) ? res : (res.reports || []);
+            const arr = Array.isArray(res) ? res : (res?.reports || []);
             return arr.map(r => ({ ...r, id: r._id || r.id, severity: r.severity || 'medium', status: r.status || 'reported' }));
         }
     });
     const { data: apiUsers, refetch: refetchUsers } = useApiData('/api/users', [], {
-        transform: (res) => Array.isArray(res) ? res : (res.users || [])
+        transform: (res) => Array.isArray(res) ? res : (res?.users || [])
     });
     const { data: apiExpenses, refetch: refetchExpenses } = useApiData('/api/expenses', [], {
-        transform: (res) => Array.isArray(res) ? res : (res.expenses || [])
-    });
-    const { data: apiAttendance } = useApiData('/api/drives', [], {
-        transform: (res) => {
-            // We'll extract attendance from drives data
-            return [];
-        }
+        transform: (res) => Array.isArray(res) ? res : (res?.expenses || [])
     });
     const allDrives = apiDrives || [];
     const allSpots = apiSpots || [];
@@ -71,15 +78,20 @@ export default function AdminPanel() {
         if (!expenseForm.driveId || !expenseForm.amount) return showToast('Select a drive and enter amount');
         setAddingExpense(true);
         try {
-            await api.post('/api/expenses', {
-                driveId: expenseForm.driveId,
-                category: expenseForm.category,
-                amount: Number(expenseForm.amount),
-                proofUrl: '/uploads/no-proof.png',
+            const formData = new FormData();
+            formData.append('driveId', expenseForm.driveId);
+            formData.append('category', expenseForm.category);
+            formData.append('amount', Number(expenseForm.amount) * 100);
+            if (expenseForm.proof) {
+                formData.append('proof', expenseForm.proof);
+            }
+
+            await api.post('/api/expenses', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
             });
             await refetchExpenses();
             setShowAddExpense(false);
-            setExpenseForm({ driveId: '', category: 'equipment', amount: '', description: '' });
+            setExpenseForm({ driveId: '', category: 'equipment', amount: '', description: '', proof: null });
             showToast('Expense added!');
         } catch (e) { showToast(e.response?.data?.error?.message || 'Failed to add expense'); }
         setAddingExpense(false);
@@ -114,15 +126,39 @@ export default function AdminPanel() {
         </div>
     );
     if (!isAuthenticated || !user) return <Navigate to="/login" />;
+    if (user.role !== 'admin') return <Navigate to="/dashboard" />;
 
     const sideLinks = [
         { id: 'overview', label: 'Analytics', icon: BarChart3 },
         { id: 'drives', label: 'Manage Drives', icon: MapPin },
         { id: 'spots', label: 'Verify Spots', icon: AlertTriangle },
+        { id: 'impact', label: 'Impact', icon: Camera },
         { id: 'attendance', label: 'Attendance', icon: QrCode },
         { id: 'expenses', label: 'Expenses', icon: DollarSign },
         { id: 'users', label: 'Users', icon: Users },
     ];
+
+    const handleSubmitImpact = async (driveId) => {
+        if (!impactForm.wasteCollected || !impactForm.areaCleaned || !impactForm.workHours) return showToast('Fill all metrics');
+        setSubmittingImpact(true);
+        try {
+            const formData = new FormData();
+            formData.append('wasteCollected', impactForm.wasteCollected);
+            formData.append('areaCleaned', impactForm.areaCleaned);
+            formData.append('workHours', impactForm.workHours);
+            Array.from(impactForm.beforePhotos).forEach(file => formData.append('beforePhotos', file));
+            Array.from(impactForm.afterPhotos).forEach(file => formData.append('afterPhotos', file));
+
+            await api.post(`/api/drives/${driveId}/impact`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            await refetchDrives();
+            setShowImpactForm(null);
+            setImpactForm({ wasteCollected: '', areaCleaned: '', workHours: '', beforePhotos: [], afterPhotos: [] });
+            showToast('Impact submitted!');
+        } catch (e) { showToast(e.response?.data?.error?.message || e.response?.data?.message || 'Failed to submit'); }
+        setSubmittingImpact(false);
+    };
 
     const handleApproveSpot = async (spotId) => {
         setSpotStatuses(prev => ({ ...prev, [spotId]: 'verified' }));
@@ -266,7 +302,7 @@ export default function AdminPanel() {
                                     {[
                                         { icon: Globe, label: 'Total Drives', value: allDrives.length },
                                         { icon: Users, label: 'Total Users', value: allUsers.length || '-' },
-                                        { icon: DollarSign, label: 'Funds Raised', value: `₹${(allDrives.reduce((s,d) => s + (d.fundingRaised || d.currentFunding || 0), 0) / 100000).toFixed(1)}L` },
+                                        { icon: DollarSign, label: 'Funds Raised', value: `₹${(allDrives.reduce((s,d) => s + (d.fundingRaised || d.currentFunding || 0), 0) / 10000000).toFixed(1)}L` },
                                         { icon: AlertTriangle, label: 'Spot Reports', value: allSpots.length },
                                     ].map(({ icon: Icon, label, value }) => (
                                         <div key={label} className="glass-card p-5 text-center">
@@ -422,7 +458,7 @@ export default function AdminPanel() {
                                                 <div className="flex gap-4 text-xs text-slate-400 mt-0.5">
                                                     <span>{new Date(drive.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
                                                     <span>{drive.currentVolunteers || 0}/{drive.maxVolunteers || 0} vol</span>
-                                                    <span>₹{((drive.currentFunding || drive.fundingRaised || 0) / 1000).toFixed(0)}k/{((drive.fundingGoal || 0) / 1000).toFixed(0)}k</span>
+                                                    <span>₹{((drive.currentFunding || drive.fundingRaised || 0) / 100000).toFixed(1)}k/{((drive.fundingGoal || 0) / 100000).toFixed(1)}k</span>
                                                 </div>
                                             </div>
                                             <span className="text-[10px] font-bold uppercase text-slate-400">{drive.status}</span>
@@ -464,7 +500,7 @@ export default function AdminPanel() {
                                             <div key={spot.id} className="glass-card p-4">
                                                 <div className="flex gap-4">
                                                     <div className="w-20 h-20 rounded-xl bg-slate-800 border border-slate-700/30 overflow-hidden flex-shrink-0">
-                                                        <img src={spot.photoUrl || spot.photoUrls?.[0] || 'https://images.unsplash.com/photo-1618477461853-cf6ed80f4710?w=800&q=80'} alt="" className="w-full h-full object-cover" />
+                                                        <img src={spot.photoUrl || spot.photoUrls?.[0] || '/images/cleanup_park_1776975755888.png'} alt="" className="w-full h-full object-cover" />
                                                     </div>
                                                     <div className="flex-1 min-w-0 py-1">
                                                         <div className="flex items-start justify-between mb-2">
@@ -507,14 +543,221 @@ export default function AdminPanel() {
                             </motion.div>
                         )}
 
+                        {activeSection === 'impact' && (
+                            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+                                <h2 className="text-2xl font-extrabold text-slate-100 mb-6 font-[var(--font-display)]">Impact <span className="gradient-text">Measurement</span></h2>
+
+                                {/* Impact submit modal */}
+                                {showImpactForm && (
+                                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowImpactForm(null)}>
+                                        <div className="glass-card-heavy p-6 w-full max-w-lg space-y-4" onClick={e => e.stopPropagation()}>
+                                            <h3 className="text-lg font-bold text-slate-100">
+                                                {allDrives.find(d => d.id === showImpactForm)?.impactSummary ? 'Edit' : 'Submit'} Impact Metrics
+                                            </h3>
+                                            <p className="text-xs text-slate-400">Drive: {allDrives.find(d => d.id === showImpactForm)?.title}</p>
+                                            <div className="grid grid-cols-3 gap-3">
+                                                <div>
+                                                    <label className="block text-[10px] text-slate-400 uppercase mb-1">Waste (kg) *</label>
+                                                    <input type="number" value={impactForm.wasteCollected} onChange={e => setImpactForm(p => ({ ...p, wasteCollected: e.target.value }))} placeholder="120" className="w-full px-3 py-2 rounded-lg text-sm bg-slate-800/50 border border-slate-700/30 text-slate-100" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] text-slate-400 uppercase mb-1">Area (m²) *</label>
+                                                    <input type="number" value={impactForm.areaCleaned} onChange={e => setImpactForm(p => ({ ...p, areaCleaned: e.target.value }))} placeholder="5000" className="w-full px-3 py-2 rounded-lg text-sm bg-slate-800/50 border border-slate-700/30 text-slate-100" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] text-slate-400 uppercase mb-1">Hours *</label>
+                                                    <input type="number" value={impactForm.workHours} onChange={e => setImpactForm(p => ({ ...p, workHours: e.target.value }))} placeholder="4" className="w-full px-3 py-2 rounded-lg text-sm bg-slate-800/50 border border-slate-700/30 text-slate-100" />
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-[10px] text-slate-400 uppercase mb-1">Before Photos</label>
+                                                    <input type="file" multiple accept="image/*" onChange={e => setImpactForm(p => ({ ...p, beforePhotos: e.target.files }))} className="w-full px-3 py-1.5 rounded-lg text-xs bg-slate-800/50 border border-slate-700/30 text-slate-100 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:bg-slate-700/50 file:text-slate-300" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] text-slate-400 uppercase mb-1">After Photos</label>
+                                                    <input type="file" multiple accept="image/*" onChange={e => setImpactForm(p => ({ ...p, afterPhotos: e.target.files }))} className="w-full px-3 py-1.5 rounded-lg text-xs bg-slate-800/50 border border-slate-700/30 text-slate-100 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:bg-slate-700/50 file:text-slate-300" />
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 pt-2">
+                                                <button onClick={() => handleSubmitImpact(showImpactForm)} disabled={submittingImpact} className="btn-primary flex-1 !py-2">{submittingImpact ? 'Submitting...' : 'Submit Impact'}</button>
+                                                <button onClick={() => setShowImpactForm(null)} className="px-4 py-2 rounded-xl text-sm text-slate-400 bg-slate-800/30 border border-slate-700/15">Cancel</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Drives with impact status */}
+                                <div className="space-y-4">
+                                    {allDrives.map(drive => {
+                                        const imp = drive.impactSummary;
+                                        const reportPhoto = allSpots.find(s => s.id === drive.reportId)?.photoUrl;
+                                        const baseUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : '');
+                                        const photoSrc = reportPhoto ? (reportPhoto.startsWith('http') ? reportPhoto : `${baseUrl}${reportPhoto}`) : null;
+                                        
+                                        return (
+                                            <div key={drive.id} className="glass-card p-5">
+                                                <div className="flex items-start gap-4">
+                                                    {/* Drive photo from report */}
+                                                    {photoSrc && (
+                                                        <div className="w-24 h-24 rounded-xl bg-slate-800 border border-slate-700/30 overflow-hidden flex-shrink-0">
+                                                            <img src={photoSrc} alt="" className="w-full h-full object-cover" />
+                                                        </div>
+                                                    )}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <div>
+                                                                <h3 className="text-sm font-bold text-slate-100">{drive.title}</h3>
+                                                                <div className="text-xs text-slate-400 mt-0.5">
+                                                                    {new Date(drive.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} · {drive.currentVolunteers || 0} volunteers
+                                                                </div>
+                                                            </div>
+                                                            {imp ? (
+                                                                <button onClick={() => { 
+                                                                    setShowImpactForm(drive.id); 
+                                                                    setImpactForm({ 
+                                                                        wasteCollected: imp.wasteCollected || '', 
+                                                                        areaCleaned: imp.areaCleaned || '', 
+                                                                        workHours: imp.workHours || '', 
+                                                                        beforePhotos: [], 
+                                                                        afterPhotos: [] 
+                                                                    }); 
+                                                                }} className="px-3 py-1.5 rounded-lg text-xs font-bold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-all flex items-center gap-1.5 border border-emerald-500/20">
+                                                                    <Edit size={13} /> Edit Impact
+                                                                </button>
+                                                            ) : (
+                                                                <button onClick={() => { setShowImpactForm(drive.id); setImpactForm({ wasteCollected: '', areaCleaned: '', workHours: '', beforePhotos: [], afterPhotos: [] }); }} className="btn-primary !py-1.5 !px-3 !text-xs flex items-center gap-1.5">
+                                                                    <Camera size={13} /> Add Impact
+                                                                </button>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Impact metrics if exists */}
+                                                        {imp && (
+                                                            <>
+                                                                <div className="grid grid-cols-3 gap-3 mt-3">
+                                                                    <div className="p-3 bg-slate-800/30 border border-slate-700/15 rounded-xl text-center">
+                                                                        <div className="text-lg font-bold text-emerald-400">{imp.wasteCollected || 0}<span className="text-[10px] text-slate-400 ml-0.5">kg</span></div>
+                                                                        <div className="text-[10px] text-slate-500 uppercase mt-0.5">Waste Collected</div>
+                                                                    </div>
+                                                                    <div className="p-3 bg-slate-800/30 border border-slate-700/15 rounded-xl text-center">
+                                                                        <div className="text-lg font-bold text-cyan-400">{imp.areaCleaned || 0}<span className="text-[10px] text-slate-400 ml-0.5">m²</span></div>
+                                                                        <div className="text-[10px] text-slate-500 uppercase mt-0.5">Area Cleaned</div>
+                                                                    </div>
+                                                                    <div className="p-3 bg-slate-800/30 border border-slate-700/15 rounded-xl text-center">
+                                                                        <div className="text-lg font-bold text-purple-400">{imp.workHours || 0}<span className="text-[10px] text-slate-400 ml-0.5">hrs</span></div>
+                                                                        <div className="text-[10px] text-slate-500 uppercase mt-0.5">Work Hours</div>
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                {(imp.beforePhotos?.length > 0 || imp.afterPhotos?.length > 0) && (
+                                                                    <div className="mt-4 border-t border-slate-700/30 pt-4">
+                                                                        <div className="grid grid-cols-2 gap-4">
+                                                                            {imp.beforePhotos?.length > 0 && (
+                                                                                <div>
+                                                                                    <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Before</h4>
+                                                                                    <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                                                                                        {imp.beforePhotos.map((url, i) => (
+                                                                                            <img key={i} src={`${baseUrl}${url}`} className="w-16 h-16 object-cover rounded-lg flex-shrink-0 border border-slate-700/30" alt="Before" />
+                                                                                        ))}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            {imp.afterPhotos?.length > 0 && (
+                                                                                <div>
+                                                                                    <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">After</h4>
+                                                                                    <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                                                                                        {imp.afterPhotos.map((url, i) => (
+                                                                                            <img key={i} src={`${baseUrl}${url}`} className="w-16 h-16 object-cover rounded-lg flex-shrink-0 border border-slate-700/30" alt="After" />
+                                                                                        ))}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </>
+                                                        )}
+
+                                                        {/* No impact yet — show placeholder */}
+                                                        {!imp && (
+                                                            <div className="mt-3 p-3 bg-slate-800/20 border border-dashed border-slate-700/20 rounded-xl text-center text-xs text-slate-500">
+                                                                No impact data yet. Click "Add Impact" to record post-event metrics.
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    {allDrives.length === 0 && <p className="text-center text-sm text-slate-400 p-8 glass-card">No drives found.</p>}
+                                </div>
+                            </motion.div>
+                        )}
+
                         {activeSection === 'attendance' && (
                             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
                                 <h2 className="text-2xl font-extrabold text-slate-100 mb-6 font-[var(--font-display)]">QR <span className="gradient-text">Attendance</span></h2>
-                                <div className="glass-card p-10 text-center mb-6">
-                                    <QrCode size={60} className="text-emerald-400/30 mx-auto mb-6" />
+                                <div className="glass-card p-6 md:p-10 text-center mb-6">
                                     <h3 className="text-lg font-bold text-slate-100 mb-2">Scan QR Codes</h3>
                                     <p className="text-sm text-slate-400 mb-6">Use the scanner to verify volunteer attendance at events</p>
-                                    <button className="btn-primary">Start Scanner</button>
+                                    
+                                    {!isScanning ? (
+                                        <div className="max-w-md mx-auto">
+                                            <QrCode size={60} className="text-emerald-400/30 mx-auto mb-6" />
+                                            <div className="mb-4">
+                                                <label className="block text-xs text-slate-400 uppercase mb-2 text-left">Select Drive to Verify *</label>
+                                                <select 
+                                                    value={scannerDriveId} 
+                                                    onChange={e => setScannerDriveId(e.target.value)} 
+                                                    className="w-full px-4 py-3 rounded-xl text-sm bg-slate-800/50 border border-slate-700/50 text-slate-100"
+                                                >
+                                                    <option value="">Select an active drive...</option>
+                                                    {allDrives.filter(d => ['active', 'upcoming', 'planned'].includes(d.status)).map(d => (
+                                                        <option key={d.id} value={d.id}>{d.title} ({new Date(d.date).toLocaleDateString()})</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <button 
+                                                onClick={() => {
+                                                    if (!scannerDriveId) return showToast('Please select a drive first.');
+                                                    setIsScanning(true);
+                                                }} 
+                                                className="btn-primary w-full max-w-xs"
+                                            >
+                                                Start Scanner
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center">
+                                            <QRScanner 
+                                                isScanning={isScanning && !scanProcessing}
+                                                onScan={async (decodedText) => {
+                                                    if (scanProcessing) return;
+                                                    setScanProcessing(true);
+                                                    try {
+                                                        const res = await api.post(`/api/drives/${scannerDriveId}/checkin`, { qrCode: decodedText });
+                                                        showToast('Successfully Verified!');
+                                                        // Pause scanning briefly
+                                                        setTimeout(() => setScanProcessing(false), 2000);
+                                                    } catch (error) {
+                                                        showToast(error.response?.data?.error?.message || 'Invalid QR or already checked in');
+                                                        setTimeout(() => setScanProcessing(false), 2000);
+                                                    }
+                                                }}
+                                                onError={(err) => showToast(err)}
+                                            />
+                                            {scanProcessing && (
+                                                <p className="mt-4 text-emerald-400 font-bold animate-pulse">Processing check-in...</p>
+                                            )}
+                                            <button 
+                                                onClick={() => setIsScanning(false)} 
+                                                className="mt-6 px-6 py-2 rounded-xl text-sm text-slate-400 bg-slate-800 border border-slate-700 hover:text-white"
+                                            >
+                                                Stop Scanner
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="glass-card p-6">
                                     <h3 className="text-sm font-bold text-slate-200 mb-4 uppercase tracking-wider">Volunteer Bookings by Drive</h3>
@@ -574,6 +817,15 @@ export default function AdminPanel() {
                                                     <input type="number" value={expenseForm.amount} onChange={e => setExpenseForm(p => ({ ...p, amount: e.target.value }))} placeholder="5000" className="w-full px-3 py-2 rounded-lg text-sm bg-slate-800/50 border border-slate-700/30 text-slate-100" />
                                                 </div>
                                             </div>
+                                            <div>
+                                                <label className="block text-xs text-slate-400 uppercase mb-1">Receipt/Proof Photo</label>
+                                                <input 
+                                                    type="file" 
+                                                    accept="image/*"
+                                                    onChange={e => setExpenseForm({ ...expenseForm, proof: e.target.files[0] })}
+                                                    className="w-full px-3 py-1.5 rounded-lg text-xs bg-slate-800/50 border border-slate-700/30 text-slate-100 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:bg-slate-700/50 file:text-slate-300" 
+                                                />
+                                            </div>
                                             <div className="flex gap-3 pt-2">
                                                 <button onClick={handleAddExpense} disabled={addingExpense} className="btn-primary flex-1 !py-2">{addingExpense ? 'Adding...' : 'Add Expense'}</button>
                                                 <button onClick={() => setShowAddExpense(false)} className="px-4 py-2 rounded-xl text-sm text-slate-400 bg-slate-800/30 border border-slate-700/15">Cancel</button>
@@ -583,7 +835,7 @@ export default function AdminPanel() {
                                 )}
                                 {/* Summary cards */}
                                 <div className="grid grid-cols-3 gap-4 mb-6">
-                                    <div className="glass-card p-4 text-center"><div className="text-xl font-bold text-slate-100">₹{(allExpenses.reduce((s,e) => s + (e.amount||0), 0)).toLocaleString()}</div><div className="text-[10px] text-slate-400 uppercase mt-1">Total Spent</div></div>
+                                    <div className="glass-card p-4 text-center"><div className="text-xl font-bold text-slate-100">₹{(allExpenses.reduce((s,e) => s + (e.amount||0), 0) / 100).toLocaleString()}</div><div className="text-[10px] text-slate-400 uppercase mt-1">Total Spent</div></div>
                                     <div className="glass-card p-4 text-center"><div className="text-xl font-bold text-emerald-400">{allExpenses.filter(e => e.isVerified).length}</div><div className="text-[10px] text-slate-400 uppercase mt-1">Verified</div></div>
                                     <div className="glass-card p-4 text-center"><div className="text-xl font-bold text-yellow-400">{allExpenses.filter(e => !e.isVerified).length}</div><div className="text-[10px] text-slate-400 uppercase mt-1">Pending</div></div>
                                 </div>
@@ -604,8 +856,8 @@ export default function AdminPanel() {
                                                 <tr key={exp._id || exp.id || i} className="text-slate-400 hover:text-slate-200 hover:bg-emerald-500/3 transition-colors">
                                                     <td className="py-3 pr-4 text-sm font-medium text-slate-200 capitalize">{exp.category || '-'}</td>
                                                     <td className="py-3 pr-4 text-xs">{exp.driveId?.title || exp.driveId?.toString?.()?.slice(-6) || '-'}</td>
-                                                    <td className="py-3 pr-4 text-right font-semibold text-slate-200">₹{(exp.amount || 0).toLocaleString()}</td>
-                                                    <td className="py-3 pr-4 text-xs">{new Date(exp.createdAt || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
+                                                    <td className="py-3 pr-4 text-right font-semibold text-slate-200">₹{((exp.amount || 0) / 100).toLocaleString()}</td>
+                                                    <td className="py-3 pr-4 text-xs">{new Date(exp.createdAt || new Date().toISOString()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
                                                     <td className="py-3 pr-4 text-center">
                                                         {exp.isVerified ? <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">✓ Verified</span> : <button onClick={async () => { try { await api.patch(`/api/expenses/${exp._id || exp.id}/verify`); refetchExpenses(); showToast('Verified'); } catch { showToast('Failed'); } }} className="text-[10px] font-bold text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded-md hover:bg-yellow-500/20 transition-colors cursor-pointer">Verify</button>}
                                                     </td>
@@ -627,24 +879,43 @@ export default function AdminPanel() {
                                 </div>
                                 <div className="space-y-3">
                                     {allUsers.length > 0 ? allUsers.map(u => (
-                                        <div key={u._id || u.id} className="glass-card p-4 flex items-center gap-4">
-                                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-slate-900 text-sm font-bold flex-shrink-0">
-                                                {(u.profile?.name || u.name || u.email || '?').charAt(0).toUpperCase()}
+                                        <div key={u._id || u.id} className="glass-card p-4 flex flex-col gap-3">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-slate-900 text-sm font-bold flex-shrink-0">
+                                                    {(u.profile?.name || u.name || u.email || '?').charAt(0).toUpperCase()}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-sm font-semibold text-slate-100">{u.profile?.name || u.name || 'Unnamed'}</div>
+                                                    <div className="text-xs text-slate-400">{u.email}</div>
+                                                </div>
+                                                <select value={userRoles[u._id || u.id] || u.role} onChange={e => handleRoleChange(u._id || u.id, e.target.value)} className="text-[10px] font-bold uppercase bg-slate-800/50 border border-slate-700/30 text-slate-300 rounded-lg px-2 py-1">
+                                                    <option value="public">Public</option>
+                                                    <option value="user">User</option>
+                                                    <option value="organizer">Organizer</option>
+                                                    <option value="admin">Admin</option>
+                                                </select>
+                                                <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-full border ${u.emailVerified ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/15' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/15'}`}>
+                                                    {u.emailVerified ? 'Verified' : 'Unverified'}
+                                                </span>
+                                                <button onClick={() => handleDeleteUser(u._id || u.id, u.profile?.name || u.name || u.email)} className="p-2 rounded-lg bg-slate-800/30 border border-slate-700/15 text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete User"><Trash2 size={14} /></button>
                                             </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="text-sm font-semibold text-slate-100">{u.profile?.name || u.name || 'Unnamed'}</div>
-                                                <div className="text-xs text-slate-400">{u.email}</div>
-                                            </div>
-                                            <select value={userRoles[u._id || u.id] || u.role} onChange={e => handleRoleChange(u._id || u.id, e.target.value)} className="text-[10px] font-bold uppercase bg-slate-800/50 border border-slate-700/30 text-slate-300 rounded-lg px-2 py-1">
-                                                <option value="public">Public</option>
-                                                <option value="user">User</option>
-                                                <option value="organizer">Organizer</option>
-                                                <option value="admin">Admin</option>
-                                            </select>
-                                            <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-full border ${u.emailVerified ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/15' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/15'}`}>
-                                                {u.emailVerified ? 'Verified' : 'Unverified'}
-                                            </span>
-                                            <button onClick={() => handleDeleteUser(u._id || u.id, u.profile?.name || u.name || u.email)} className="p-2 rounded-lg bg-slate-800/30 border border-slate-700/15 text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete User"><Trash2 size={14} /></button>
+                                            {(u.profile?.emergencyContact?.name || u.profile?.medicalNotes) && (
+                                                <div className="bg-slate-800/40 border border-slate-700/30 rounded-lg p-3 text-xs grid grid-cols-1 md:grid-cols-2 gap-4 mt-1">
+                                                    {u.profile?.emergencyContact?.name && (
+                                                        <div>
+                                                            <span className="text-slate-400 uppercase tracking-wider text-[10px] block mb-1">Emergency Contact</span>
+                                                            <span className="text-slate-200">{u.profile.emergencyContact.name}</span>
+                                                            <span className="text-emerald-400 ml-2">{u.profile.emergencyContact.phone}</span>
+                                                        </div>
+                                                    )}
+                                                    {u.profile?.medicalNotes && (
+                                                        <div>
+                                                            <span className="text-slate-400 uppercase tracking-wider text-[10px] block mb-1">Medical / Allergy Notes</span>
+                                                            <span className="text-slate-200">{u.profile.medicalNotes}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     )) : (
                                         <div className="glass-card p-10 text-center text-slate-400 text-sm">No users found.</div>

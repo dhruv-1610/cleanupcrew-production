@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { mockDrives, mockBadges, mockDonations } from '../data/mockData';
 import { useApiData } from '../hooks/useApiData';
+import QRCodeModal from '../components/QRCodeModal';
 import {
     LayoutDashboard, MapPin, Calendar, Trophy, DollarSign, QrCode,
     Award, Clock, Leaf, Star, TrendingUp, ArrowRight, ChevronRight,
@@ -15,21 +15,38 @@ const fadeUp = {
     visible: (i = 0) => ({ opacity: 1, y: 0, transition: { delay: i * 0.05, duration: 0.5 } }),
 };
 
+const VOLUNTEER_BADGES = [
+    { id: 'Bronze', name: 'Bronze Volunteer', description: 'Completed your first cleanup drive', requirement: '1 Completed Drive', icon: '🥉' },
+    { id: 'Silver', name: 'Silver Volunteer', description: 'Veteran volunteer with 5 drives', requirement: '5 Completed Drives', icon: '🥈' },
+    { id: 'Gold', name: 'Gold Volunteer', description: 'Elite cleanup champion with 15 drives', requirement: '15 Completed Drives', icon: '🥇' },
+    { id: 'Platinum', name: 'Platinum Volunteer', description: 'Legendary eco-warrior with 30+ drives', requirement: '30 Completed Drives', icon: '💎' },
+];
+
+const DONOR_BADGES = [
+    { id: 'Bronze', name: 'Bronze Donor', description: 'Funded your first cleanup', requirement: '₹1,000 Donated', icon: '💰' },
+    { id: 'Silver', name: 'Silver Donor', description: 'Generous supporter of clean drives', requirement: '₹5,000 Donated', icon: '💳' },
+    { id: 'Gold', name: 'Gold Donor', description: 'Major funding contributor', requirement: '₹20,000 Donated', icon: '🏆' },
+    { id: 'Platinum', name: 'Platinum Donor', description: 'Top-tier philanthropist', requirement: '₹50,000 Donated', icon: '👑' },
+];
+
+const ALL_BADGES = [...VOLUNTEER_BADGES.map(b => ({...b, category: 'volunteer'})), ...DONOR_BADGES.map(b => ({...b, category: 'donor'}))];
+
 export default function Dashboard() {
     const { user, isAuthenticated, loading: authLoading, updateUser } = useAuth();
     const [activeSection, setActiveSection] = useState('overview');
     const [settingsName, setSettingsName] = useState('');
     const [settingsEmail, setSettingsEmail] = useState('');
     const [settingsSaved, setSettingsSaved] = useState(false);
+    const [qrModalData, setQrModalData] = useState(null);
 
     // ⚠️ ALL hooks must be called BEFORE any early returns (React Rules of Hooks)
-    const { data: apiDrives } = useApiData('/api/drives', mockDrives, {
+    const { data: apiDrives } = useApiData('/api/drives', [], {
         transform: (res) => {
-            const arr = Array.isArray(res) ? res : (res.drives || []);
+            const arr = Array.isArray(res) ? res : (res?.drives || []);
             return arr.map(d => ({ 
                 ...d, 
                 id: d._id || d.id,
-                location: d.location?.address ? d.location : { address: 'Unknown Location', ...d.location }
+                location: { address: d.locationAddress || d.location?.address || 'Location', ...d.location }
             }));
         }
     });
@@ -42,14 +59,18 @@ export default function Dashboard() {
     );
     if (!isAuthenticated || !user) return <Navigate to="/login" />;
 
-    const allDrives = apiDrives?.length > 0 ? apiDrives : mockDrives;
+    const allDrives = apiDrives || [];
     // Match drives: user.drives contains IDs that could be _id or id format
-    const userDriveIds = user.drives || [];
+    const userDriveIds = Array.isArray(user.drives) ? user.drives : [];
     const userDrives = allDrives.filter(d => 
         userDriveIds.includes(d.id) || userDriveIds.includes(d._id)
     );
-    const userDonations = user.donations || [];
-    const userBadges = mockBadges.filter(b => user.badges?.includes(b.id));
+    const userDonations = Array.isArray(user.donations) ? user.donations : [];
+    const userBadges = ALL_BADGES.filter(b => {
+        if (!Array.isArray(user.badges)) return false;
+        // Backend sends tier names like 'Bronze', 'Silver' — match by ID
+        return user.badges.includes(b.id);
+    });
 
     const sideLinks = [
         { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -206,11 +227,31 @@ export default function Dashboard() {
                                                     <span className="text-cyan-400">{drive.impact.workHours}h worked</span>
                                                 </div>
                                             )}
-                                            {drive.status === 'completed' && (
-                                                <Link to={`/certificate/${drive.id}`} className="mt-3 inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/15 rounded-lg hover:bg-emerald-500/15 transition-all">
-                                                    <Award size={14} /> Download Certificate
-                                                </Link>
-                                            )}
+                                            
+                                            {/* Action Buttons */}
+                                            <div className="mt-4 flex flex-wrap gap-2">
+                                                {(drive.status === 'upcoming' || drive.status === 'active' || drive.status === 'planned') && (
+                                                    <button 
+                                                        onClick={() => {
+                                                            const attendance = user.attendances?.find(a => a.driveId === drive.id || a.driveId === drive._id);
+                                                            if (attendance) {
+                                                                setQrModalData({ attendance, drive });
+                                                            } else {
+                                                                alert('No attendance record found. Try refreshing.');
+                                                            }
+                                                        }}
+                                                        className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all"
+                                                    >
+                                                        <QrCode size={14} /> Show Entry Pass
+                                                    </button>
+                                                )}
+                                                
+                                                {drive.status === 'completed' && (
+                                                    <Link to={`/certificate/${drive.id}`} className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/15 rounded-lg hover:bg-emerald-500/15 transition-all">
+                                                        <Award size={14} /> Download Certificate
+                                                    </Link>
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
                                     {userDrives.length === 0 && (
@@ -261,10 +302,10 @@ export default function Dashboard() {
                             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
                                 <h2 className="text-2xl font-extrabold text-slate-100 mb-6 font-[var(--font-display)]">Badges & <span className="gradient-text">Rewards</span></h2>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    {mockBadges.map(badge => {
+                                    {ALL_BADGES.map(badge => {
                                         const earned = user.badges?.includes(badge.id);
                                         return (
-                                            <div key={badge.id} className={`glass-card p-5 ${earned ? 'border-emerald-500/15' : 'opacity-40'}`}>
+                                            <div key={`${badge.category}-${badge.id}`} className={`glass-card p-5 ${earned ? 'border-emerald-500/15' : 'opacity-40'}`}>
                                                 <div className="flex items-center gap-3">
                                                     <span className="text-3xl">{badge.icon}</span>
                                                     <div>
@@ -345,6 +386,18 @@ export default function Dashboard() {
                     </div>
                 </div>
             </div>
+
+            {/* QR Code Modal for user's entry pass */}
+            {qrModalData && (
+                <QRCodeModal 
+                    isOpen={!!qrModalData} 
+                    onClose={() => setQrModalData(null)}
+                    attendance={qrModalData.attendance}
+                    driveTitle={qrModalData.drive.title}
+                    driveLocation={qrModalData.drive.location?.address}
+                    driveDate={qrModalData.drive.date}
+                />
+            )}
         </div>
     );
 }

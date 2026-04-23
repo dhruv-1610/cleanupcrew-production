@@ -1,189 +1,175 @@
-import mongoose from 'mongoose';
 import { Drive } from '../models/drive.model';
+import { Donation } from '../models/donation.model';
 import { Impact } from '../models/impact.model';
 import { Expense } from '../models/expense.model';
-import { Donation } from '../models/donation.model';
 import { Attendance } from '../models/attendance.model';
+import { User } from '../models/user.model';
 import { NotFoundError } from '../utils/errors';
+import { toObjectId, isValidObjectId } from '../middleware/validateObjectId';
 
-export interface TransparencyResult {
-  driveId: string;
-  moneyCollected: number;
-  totalVerifiedExpenses: number;
-  categoryBreakdown: Record<string, number>;
-  photos: { before: string[]; after: string[] };
-  attendanceCount: number;
-}
+// ── Platform-wide transparency ──────────────────────────────────────────────
 
 /**
- * Get transparency data for a drive using aggregation pipeline.
- * - moneyCollected = drive.fundingRaised
- * - totalVerifiedExpenses = sum of isVerified=true expenses
- * - categoryBreakdown = verified expenses grouped by category
- * - photos = before + after from impact
- * - attendanceCount = count of attendance with status checked_in
+ * Aggregate platform-wide transparency data for the public Transparency page.
+ * Returns real data from the database — no mock fallbacks.
  */
-export async function getTransparency(driveId: string): Promise<TransparencyResult> {
-  const driveObjectId = new mongoose.Types.ObjectId(driveId);
+export async function getPlatformTransparency() {
+  const [
+    drives,
+    completedDonations,
+    verifiedExpenses,
+    impacts,
+    totalUsers,
+  ] = await Promise.all([
+    Drive.find({}).lean(),
+    Donation.find({ status: 'completed' }).lean(),
+    Expense.find({ isVerified: true }).lean(),
+    Impact.find({}).lean(),
+    User.countDocuments(),
+  ]);
 
-  const drive = await Drive.findById(driveObjectId);
+  const completedDrives = drives.filter((d) => d.status === 'completed');
+  const totalFundsRaised = completedDonations.reduce((s, d) => s + d.amount, 0);
+  const totalExpenses = verifiedExpenses.reduce((s, e) => s + e.amount, 0);
+  const totalWasteKg = impacts.reduce((s, i) => s + (i.wasteCollected ?? 0), 0);
+  const totalAreaCleaned = impacts.reduce((s, i) => s + (i.areaCleaned ?? 0), 0);
+  const totalWorkHours = impacts.reduce((s, i) => s + (i.workHours ?? 0), 0);
+  const totalVolunteers = totalUsers;
+
+  // Compute unique cities from drive locations
+  const cities = new Set<string>();
+  for (const d of drives) {
+    const loc = d.location;
+    if (loc && typeof loc === 'object' && 'coordinates' in loc) {
+      // Use rough coordinate binning for city counting
+      const key = `${(loc as any).coordinates?.[1]?.toFixed(1)},${(loc as any).coordinates?.[0]?.toFixed(1)}`;
+      if (key !== 'undefined,undefined') cities.add(key);
+    }
+  }
+
+  return {
+    stats: {
+      totalDrives: drives.length,
+      completedDrives: completedDrives.length,
+      totalVolunteers,
+      totalFundsRaised,
+      totalExpenses,
+      totalWasteKg,
+      totalAreaCleaned,
+      totalWorkHours,
+      citiesCovered: cities.size || drives.length,
+    },
+    donations: completedDonations.map((d) => ({
+      id: d._id.toString(),
+      driveId: d.driveId.toString(),
+      userId: d.userId.toString(),
+      amount: d.amount,
+      date: d.createdAt?.toISOString?.() ?? new Date().toISOString(),
+      status: d.status,
+    })),
+    expenses: verifiedExpenses.map((e) => ({
+      id: e._id.toString(),
+      driveId: e.driveId.toString(),
+      category: e.category,
+      amount: e.amount,
+      description: '',
+      proofUrl: e.proofUrl,
+      isVerified: e.isVerified,
+      date: e.createdAt?.toISOString?.() ?? new Date().toISOString(),
+    })),
+    drives: drives.map((d) => ({
+      id: d._id.toString(),
+      title: d.title,
+      status: d.status,
+      date: d.date,
+      maxVolunteers: d.maxVolunteers,
+      currentVolunteers: (d.requiredRoles || []).reduce((s: number, r: any) => s + (r.booked ?? 0), 0),
+      fundingGoal: d.fundingGoal ?? 0,
+      fundingRaised: d.fundingRaised ?? 0,
+    })),
+  };
+}
+
+// ── Drive-specific transparency ─────────────────────────────────────────────
+
+/**
+ * Get transparency data for a specific drive (public).
+ * Returns drive info, donations, expenses, and impact.
+ * Gracefully handles missing data instead of throwing 404.
+ */
+export async function getTransparency(driveId: string) {
+  if (!isValidObjectId(driveId)) {
+    throw new NotFoundError('Drive not found');
+  }
+
+  const driveObjectId = toObjectId(driveId, 'driveId');
+
+  const [drive, donations, expenses, impact, attendances] = await Promise.all([
+    Drive.findById(driveObjectId).lean(),
+    Donation.find({ driveId: driveObjectId, status: 'completed' }).sort({ createdAt: -1 }).lean(),
+    Expense.find({ driveId: driveObjectId }).sort({ createdAt: -1 }).lean(),
+    Impact.findOne({ driveId: driveObjectId }).lean(),
+    Attendance.find({ driveId: driveObjectId, status: { $in: ['booked', 'checked_in'] } })
+      .select('role status')
+      .lean(),
+  ]);
+
   if (!drive) {
     throw new NotFoundError('Drive not found');
   }
 
-  const impact = await Impact.findOne({ driveId: driveObjectId }).lean();
-  if (!impact) {
-    throw new NotFoundError('Impact not found for this drive');
-  }
-
-  const [expenseAgg, totalVerifiedResult, attendanceCount] = await Promise.all([
-    Expense.aggregate<{ _id: string; total: number }>([
-      { $match: { driveId: driveObjectId, isVerified: true } },
-      { $group: { _id: '$category', total: { $sum: '$amount' } } },
-    ]),
-    Expense.aggregate<{ total: number }>([
-      { $match: { driveId: driveObjectId, isVerified: true } },
-      { $group: { _id: null, total: { $sum: '$amount' } } },
-    ]),
-    Attendance.countDocuments({ driveId: driveObjectId, status: 'checked_in' }),
-  ]);
-
-  const categoryBreakdown: Record<string, number> = {};
-  for (const row of expenseAgg) {
-    categoryBreakdown[row._id] = row.total;
-  }
-
-  const totalVerifiedExpenses = totalVerifiedResult[0]?.total ?? 0;
+  const totalDonations = donations.reduce((s, d) => s + d.amount, 0);
+  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+  const volunteerCount = attendances.length;
+  const checkedInCount = attendances.filter((a) => a.status === 'checked_in').length;
 
   return {
-    driveId: driveId.toString(),
-    moneyCollected: drive.fundingRaised,
-    totalVerifiedExpenses,
-    categoryBreakdown,
-    photos: {
-      before: impact.beforePhotos ?? [],
-      after: impact.afterPhotos ?? [],
+    drive: {
+      id: drive._id.toString(),
+      title: drive.title,
+      status: drive.status,
+      date: drive.date,
+      maxVolunteers: drive.maxVolunteers,
+      currentVolunteers: (drive.requiredRoles || []).reduce((s: number, r: any) => s + (r.booked ?? 0), 0),
+      fundingGoal: drive.fundingGoal ?? 0,
+      fundingRaised: drive.fundingRaised ?? 0,
+      requiredRoles: drive.requiredRoles,
     },
-    attendanceCount,
-  };
-}
-
-// ── Platform-wide transparency ──────────────────────────────────────────────
-
-export interface PlatformTransparencyResult {
-  stats: {
-    totalDrives: number;
-    completedDrives: number;
-    totalVolunteers: number;
-    totalWasteKg: number;
-    totalFundsRaised: number;
-  };
-  donations: Array<{
-    id: string;
-    amount: number;
-    driveId: string;
-    date: string;
-  }>;
-  expenses: Array<{
-    id: string;
-    category: string;
-    description: string;
-    amount: number;
-    driveId: string;
-    date: string;
-    receipt: boolean;
-  }>;
-  drives: Array<Record<string, unknown>>;
-}
-
-/**
- * Get platform-wide transparency data (aggregate stats).
- * Called by GET /api/transparency (no driveId param).
- * Returns the shape the frontend Transparency.jsx and Landing.jsx expect.
- */
-export async function getPlatformTransparency(): Promise<PlatformTransparencyResult> {
-  const [
-    allDrives,
-    totalVolunteers,
-    impactAgg,
-    fundingAgg,
-    recentDonations,
-    allExpenses,
-  ] = await Promise.all([
-    Drive.find().lean(),
-    Attendance.countDocuments({ status: { $in: ['booked', 'checked_in'] } }),
-    Impact.aggregate<{ totalWaste: number }>([
-      { $group: { _id: null, totalWaste: { $sum: '$wasteCollected' } } },
-    ]),
-    Donation.aggregate<{ totalFunds: number }>([
-      { $match: { status: 'completed' } },
-      { $group: { _id: null, totalFunds: { $sum: '$amount' } } },
-    ]),
-    Donation.find({ status: 'completed' })
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .lean(),
-    Expense.find().sort({ createdAt: -1 }).lean(),
-  ]);
-
-  const completedDrives = allDrives.filter((d) => d.status === 'completed').length;
-  const totalWasteKg = impactAgg[0]?.totalWaste ?? 0;
-  const totalFundsRaised = fundingAgg[0]?.totalFunds ?? 0;
-
-  const stats = {
-    totalDrives: allDrives.length,
-    completedDrives,
-    totalVolunteers,
-    totalWasteKg,
-    totalFundsRaised,
-  };
-
-  const donations = recentDonations.map((d) => ({
-    id: d._id.toString(),
-    amount: d.amount,
-    driveId: d.driveId.toString(),
-    date: d.createdAt?.toISOString?.() ?? new Date().toISOString(),
-  }));
-
-  const expenses = allExpenses.map((e) => ({
-    id: e._id.toString(),
-    category: e.category.charAt(0).toUpperCase() + e.category.slice(1),
-    description: `${e.category} expense`,
-    amount: e.amount,
-    driveId: e.driveId.toString(),
-    date: e.createdAt?.toISOString?.() ?? new Date().toISOString(),
-    receipt: e.isVerified,
-  }));
-
-  // Map drives to the shape the frontend expects
-  const drives = allDrives.map((d) => {
-    const totalBooked = d.requiredRoles?.reduce(
-      (sum: number, r: { booked?: number }) => sum + (r.booked ?? 0),
-      0,
-    ) ?? 0;
-    const totalCapacity = d.requiredRoles?.reduce(
-      (sum: number, r: { capacity: number }) => sum + r.capacity,
-      0,
-    ) ?? 0;
-
-    return {
+    funding: {
+      fundingGoal: drive.fundingGoal ?? 0,
+      fundingRaised: drive.fundingRaised ?? 0,
+      totalDonations,
+      totalExpenses,
+      balance: totalDonations - totalExpenses,
+      donationCount: donations.length,
+    },
+    donations: donations.map((d) => ({
       id: d._id.toString(),
-      title: d.title,
-      date: d.date,
-      status: d.status === 'planned' ? 'upcoming' : d.status,
-      location: d.location
-        ? {
-            address: `${d.location.coordinates[1].toFixed(4)}, ${d.location.coordinates[0].toFixed(4)}`,
-            lat: d.location.coordinates[1],
-            lng: d.location.coordinates[0],
-          }
-        : { address: 'Unknown' },
-      currentVolunteers: totalBooked,
-      maxVolunteers: totalCapacity,
-      currentFunding: d.fundingRaised ?? 0,
-      fundingGoal: d.fundingGoal ?? 0,
-    };
-  });
-
-  return { stats, donations, expenses, drives };
+      userId: d.userId.toString(),
+      amount: d.amount,
+      date: d.createdAt?.toISOString?.() ?? new Date().toISOString(),
+      status: d.status,
+    })),
+    expenses: expenses.map((e) => ({
+      id: e._id.toString(),
+      category: e.category,
+      amount: e.amount,
+      proofUrl: e.proofUrl,
+      isVerified: e.isVerified,
+      date: e.createdAt?.toISOString?.() ?? new Date().toISOString(),
+    })),
+    impact: impact
+      ? {
+          wasteCollected: impact.wasteCollected,
+          areaCleaned: impact.areaCleaned,
+          workHours: impact.workHours,
+          beforePhotos: impact.beforePhotos ?? [],
+          afterPhotos: impact.afterPhotos ?? [],
+        }
+      : null,
+    attendance: {
+      totalBooked: volunteerCount,
+      checkedIn: checkedInCount,
+    },
+  };
 }

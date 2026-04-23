@@ -1,8 +1,10 @@
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
+import FeedbackWidget from './components/FeedbackWidget';
 import Landing from './pages/Landing';
 import Drives from './pages/Drives';
 import DriveDetail from './pages/DriveDetail';
@@ -16,6 +18,16 @@ import Dashboard from './pages/Dashboard';
 import AdminPanel from './pages/AdminPanel';
 import ReportSpot from './pages/ReportSpot';
 import Certificate from './pages/Certificate';
+import About from './pages/About';
+
+/** Scroll to top on every route change */
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+}
 
 function AnimatedRoutes() {
   const location = useLocation();
@@ -24,6 +36,7 @@ function AnimatedRoutes() {
 
   return (
     <div className="flex flex-col min-h-screen">
+      <ScrollToTop />
       <Navbar />
       <main className="flex-1">
         <AnimatePresence mode="wait">
@@ -41,10 +54,12 @@ function AnimatedRoutes() {
             <Route path="/admin" element={<AdminPanel />} />
             <Route path="/report" element={<ReportSpot />} />
             <Route path="/certificate/:driveId" element={<Certificate />} />
+            <Route path="/about" element={<About />} />
           </Routes>
         </AnimatePresence>
       </main>
       {showFooter && <Footer />}
+      <FeedbackWidget />
     </div>
   );
 }

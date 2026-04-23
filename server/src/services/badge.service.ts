@@ -52,14 +52,36 @@ export async function getUserBadges(userId: string): Promise<{
 }> {
   const mongoose = await import('mongoose');
   const Attendance = (await import('../models/attendance.model')).Attendance;
+  const { Drive } = await import('../models/drive.model');
 
   const user = await User.findById(userId).lean();
   if (!user) throw new NotFoundError('User not found');
 
-  const driveCount = await Attendance.countDocuments({
+  // Count drives where user has booked/checked-in AND drive is completed
+  // This ensures users who participated get badges even without QR check-in
+  const userAttendances = await Attendance.find({
     userId: new mongoose.Types.ObjectId(userId),
-    status: 'checked_in',
-  });
+    status: { $in: ['booked', 'checked_in'] },
+  }).lean();
+
+  // Get all drive IDs the user attended
+  const attendedDriveIds = userAttendances.map(a => a.driveId);
+
+  // Count how many of those drives are completed (i.e., actually happened)
+  let driveCount = 0;
+  if (attendedDriveIds.length > 0) {
+    driveCount = await Drive.countDocuments({
+      _id: { $in: attendedDriveIds },
+      status: 'completed',
+    });
+  }
+
+  // Also count checked_in as a fallback (even if drive isn't completed yet,
+  // QR check-in proves physical presence)
+  const checkedInCount = userAttendances.filter(a => a.status === 'checked_in').length;
+  
+  // Use the higher count
+  driveCount = Math.max(driveCount, checkedInCount);
 
   const totalDonations = user.stats?.donations ?? 0;
 
