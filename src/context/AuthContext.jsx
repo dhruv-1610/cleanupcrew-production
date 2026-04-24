@@ -76,7 +76,7 @@ export function AuthProvider({ children }) {
     // ── Refresh user from backend (re-fetch /auth/me) ──────────────────────
     const refreshUser = useCallback(async () => {
         try {
-            const { data } = await api.get('/auth/me');
+            const { data } = await api.get('/auth/me', { params: { _t: Date.now() } });
             const u = data.user;
             setUser(u);
             localStorage.setItem('cleanupcrew_user', JSON.stringify(u));

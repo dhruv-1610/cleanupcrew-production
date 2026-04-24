@@ -25,7 +25,7 @@ export function useApiData(url, fallback = null, options = {}) {
         // Only set loading on initial fetch, not on polling
         if (!isPolling) setLoading(true);
         try {
-            const { data: raw } = await api.get(url);
+            const { data: raw } = await api.get(url, { params: { _t: Date.now() } });
             if (!mountedRef.current) return;
             const result = transform ? transform(raw) : raw;
             setData(result);

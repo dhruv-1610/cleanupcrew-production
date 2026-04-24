@@ -57,7 +57,7 @@ export default function Navbar() {
                 initial={{ y: -100 }}
                 animate={{ y: 0 }}
                 transition={{ type: 'spring', damping: 25, stiffness: 120 }}
-                className={`fixed top-0 left-0 right-0 z-[1100] transition-all duration-500 ${scrolled
+                className={`fixed top-0 left-0 right-0 z-[2000] transition-all duration-500 ${scrolled
                     ? 'bg-[rgba(10,22,40,0.8)] backdrop-blur-2xl border-b border-[rgba(148,163,184,0.06)]'
                     : 'bg-transparent'
                     }`}
@@ -178,7 +178,7 @@ export default function Navbar() {
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
-                        className="fixed top-16 left-0 right-0 z-[1050] bg-[rgba(10,22,40,0.95)] backdrop-blur-2xl border-b border-slate-700/30 lg:hidden"
+                        className="fixed top-16 left-0 right-0 z-[1999] bg-[rgba(10,22,40,0.95)] backdrop-blur-2xl border-b border-slate-700/30 lg:hidden"
                     >
                         <div className="px-4 py-4 space-y-1">
                             {navLinks.map(({ path, label, icon: Icon }) => (

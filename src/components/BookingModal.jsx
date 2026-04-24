@@ -45,7 +45,7 @@ export default function BookingModal({ isOpen, onClose, role, driveName, onConfi
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                    className="fixed inset-0 z-[3000] flex items-center justify-center p-4"
                 >
                     {/* Backdrop */}
                     <motion.div
@@ -61,12 +61,12 @@ export default function BookingModal({ isOpen, onClose, role, driveName, onConfi
                         initial={{ opacity: 0, y: 20, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 20, scale: 0.95 }}
-                        className="relative w-full max-w-lg glass-card-heavy shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto custom-scrollbar"
+                        className="relative w-full max-w-lg glass-card-heavy shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar"
                     >
                         {/* Gradient top bar */}
                         <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-cyan-400 to-blue-500" />
 
-                        <div className="p-6 sm:p-8">
+                        <div className="p-6 sm:p-8 pb-10">
                             <div className="flex justify-between items-center mb-6">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/15 to-cyan-500/15 border border-emerald-500/15 flex items-center justify-center">
@@ -167,7 +167,7 @@ export default function BookingModal({ isOpen, onClose, role, driveName, onConfi
                                 <button
                                     type="submit"
                                     disabled={processing}
-                                    className="btn-primary w-full flex items-center justify-center gap-2 !py-3.5 mt-6 disabled:opacity-50"
+                                    className="btn-primary w-full flex items-center justify-center gap-2 !py-3.5 disabled:opacity-50"
                                 >
                                     {processing ? (
                                         <>

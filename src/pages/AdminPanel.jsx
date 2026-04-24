@@ -340,9 +340,9 @@ export default function AdminPanel() {
                                         <h4 className="text-sm font-bold text-slate-200 mb-3 uppercase tracking-wider">Spot Reports</h4>
                                         <div className="space-y-2">
                                             {[
-                                                { label: 'Reported', count: allSpots.filter(s => s.status === 'reported').length, color: 'bg-red-400' },
-                                                { label: 'Verified', count: allSpots.filter(s => s.status === 'verified').length, color: 'bg-orange-400' },
-                                                { label: 'Cleaned', count: allSpots.filter(s => s.status === 'cleaned').length, color: 'bg-emerald-400' },
+                                                { label: 'Reported', count: allSpots.filter(s => (spotStatuses[s.id] || s.status) === 'reported').length, color: 'bg-red-400' },
+                                                { label: 'Verified', count: allSpots.filter(s => (spotStatuses[s.id] || s.status) === 'verified').length, color: 'bg-orange-400' },
+                                                { label: 'Cleaned', count: allSpots.filter(s => (spotStatuses[s.id] || s.status) === 'cleaned').length, color: 'bg-emerald-400' },
                                             ].map(s => (
                                                 <div key={s.label} className="flex items-center justify-between">
                                                     <div className="flex items-center gap-2">
@@ -393,7 +393,7 @@ export default function AdminPanel() {
                                             <div><label className="block text-xs text-slate-400 uppercase mb-1">Linked Report * (verified spot)</label>
                                                 <select value={createForm.reportId} onChange={e => setCreateForm(p => ({ ...p, reportId: e.target.value }))} className="w-full px-3 py-2 rounded-lg text-sm bg-slate-800/50 border border-slate-700/30 text-slate-100">
                                                     <option value="">Select verified spot...</option>
-                                                    {allSpots.filter(s => s.status === 'verified').map(s => <option key={s.id} value={s.id}>{(s.description || s.id).slice(0, 60)}</option>)}
+                                                    {allSpots.filter(s => (spotStatuses[s.id] || s.status) === 'verified').map(s => <option key={s.id} value={s.id}>{(s.description || s.id).slice(0, 60)}</option>)}
                                                 </select>
                                             </div>
                                             <div><label className="block text-xs text-slate-400 uppercase mb-1">Required Roles</label>
@@ -490,7 +490,7 @@ export default function AdminPanel() {
                                 {/* Status summary */}
                                 <div className="grid grid-cols-4 gap-3 mb-6">
                                     {[{l:'Reported',s:'reported',c:'text-red-400 bg-red-500/10'},{l:'Verified',s:'verified',c:'text-amber-400 bg-amber-500/10'},{l:'Drive Created',s:'drive_created',c:'text-blue-400 bg-blue-500/10'},{l:'Cleaned',s:'cleaned',c:'text-emerald-400 bg-emerald-500/10'}].map(x=>(
-                                        <div key={x.s} className="glass-card p-3 text-center"><div className={`text-lg font-bold ${x.c.split(' ')[0]}`}>{allSpots.filter(s=>s.status===x.s).length}</div><div className="text-[10px] text-slate-400 uppercase mt-0.5">{x.l}</div></div>
+                                        <div key={x.s} className="glass-card p-3 text-center"><div className={`text-lg font-bold ${x.c.split(' ')[0]}`}>{allSpots.filter(s=>(spotStatuses[s.id] || s.status)===x.s).length}</div><div className="text-[10px] text-slate-400 uppercase mt-0.5">{x.l}</div></div>
                                     ))}
                                 </div>
                                 <div className="space-y-3">
